@@ -70,6 +70,8 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
   const draggedPieceRef = useRef<HTMLElement | null>(null);
   const selectedPieceRef = useRef<HTMLElement | null>(null);
 
+  const legalMoveSquaresRef = useRef<HTMLElement[]>([]);
+
   const mouseDownRef = useRef(false);
 
 
@@ -80,6 +82,47 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
         el.classList.remove("entered")
     );
   }
+  const getSquareId = (move: number) => {
+        const from = move & 0x3F;
+        const to = (move >> 6) & 0x3F;
+        const toReturn = [
+            `${(from % 8)+1}${Math.floor(from / 8)+1}`,
+            `${(to % 8)+1}${Math.floor(to / 8)+1}`
+        ];
+        return toReturn;
+    }
+
+  const showLegalMoves = (fromSquare: string) => {
+        const moves = [];
+        const rawData = getLegalMoves();
+
+        for(let i=0; i<rawData.size(); i++) {
+            moves.push(getSquareId(rawData.get(i)));
+        }
+
+        const squares: HTMLElement[] = [];
+        moves.forEach(move => {
+           if (fromSquare === move[0]) {
+                const square = document.getElementById(move[1]);
+                if (!square) return;
+                squares.push(square);
+                const sqrChildNode = square.childNodes[0] as HTMLElement;
+                sqrChildNode.classList.remove("hide");
+                sqrChildNode.classList.add("show");
+
+           } 
+        });
+        legalMoveSquaresRef.current = squares;
+    }
+
+    const removeLegalMoves = () => {
+        legalMoveSquaresRef.current.forEach(square => {
+          const sqrChildNode = square.childNodes[0] as HTMLElement;
+            sqrChildNode.classList.remove("show");
+            sqrChildNode.classList.add("hide");
+        });
+        legalMoveSquaresRef.current = [];
+    }
 
   const getEnPassantData = (toSquare: HTMLElement): HTMLElement | null => {
     const turn = getTurn();
@@ -179,7 +222,8 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
   // Handlers
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.pointerType === 'mouse') return;
-    //if (event.pointerType === 'touch' && event.touches && event.touches.length > 1) return;
+    const nativeEvent = event.nativeEvent as PointerEvent & TouchEvent;
+    if (event.pointerType === 'touch' && nativeEvent.touches && nativeEvent.touches.length > 1) return;
 
     const target = event.target as HTMLElement;
     const square = target.classList.contains('base-square') ? target : target.closest('.base-square');
@@ -188,7 +232,6 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
     const piece = target.classList.contains('square') ? target : null;
     document.addEventListener("pointerup", handlePointerUp);
 
-    const nativeEvent = event.nativeEvent;
     const result = calculateValuesForPieceMovement(nativeEvent, boardRef, flip);
     if (!result) return;
 
@@ -217,9 +260,10 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
         pNode.classList.remove("selected-square");
       }
       selectedPieceRef.current = null;
-      //removeLegalMoves();
+      removeLegalMoves();
 
-      //showLegalMoves(draggedPiece.parentNode.id);
+      const parentDSquare = draggedPieceRef.current.parentNode as HTMLElement;
+      showLegalMoves(parentDSquare.id);
 
     } else {
       handleClickInsideBoard(squareId);
@@ -281,7 +325,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
             draggedPieceRef.current.classList.remove("dragging");
             draggedPieceRef.current.style.cursor = "grab";
             removeAllEnteries();
-            //this.removeLegalMoves();
+            removeLegalMoves();
             mouseDownRef.current = false;
             draggedPieceRef.current = null;
             return;
@@ -294,7 +338,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
         draggedPieceRef.current.classList.remove("dragging");
         draggedPieceRef.current.style.cursor = "grab";
 
-        //removeLegalMoves();
+        removeLegalMoves();
 
          if (fromSquare.childNodes.length > 1 && fromSquare.childNodes[1] !== draggedPieceRef.current) {
               console.error("Dragged piece is not the child of its assumed parent square?");
@@ -343,7 +387,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
       const notation = getMoveNotation(fromSquare, targetSquare);
       const potentialEnPassantCaptureSquare = getEnPassantData(targetSquare);
 
-      //removeLegalMoves();
+      removeLegalMoves();
 
       const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation);
 
@@ -365,7 +409,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
               const parentSSquare = selectedPieceRef.current.parentNode as HTMLElement;
               fromSquare.classList.remove("selected-square");
               selectedPieceRef.current = pieceOnTarget;
-              // this.showLegalMoves(this.selectedPiece.parentNode.id);
+              showLegalMoves(parentSSquare.id);
               parentSSquare.classList.add("selected-square");
             } else {
               // Click was on an empty square or wrong-color piece, deselect
@@ -380,7 +424,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
           if (!selectedPieceRef.current) return;
           const parentSSquare = selectedPieceRef.current.parentNode as HTMLElement;
           parentSSquare.classList.add("selected-square");
-          //this.showLegalMoves(parentSSquare.id);  
+          showLegalMoves(parentSSquare.id);  
       }
     }
   }, [])
@@ -400,7 +444,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
       const parentSSquare = selectedPieceRef.current.parentNode as HTMLElement;
       parentSSquare.classList.remove("selected-square");
       selectedPieceRef.current = null;
-      //this.removeLegalMoves(); // Hide the legal moves of the deselected piece
+      removeLegalMoves(); // Hide the legal moves of the deselected piece
     }
   }, [])
 
