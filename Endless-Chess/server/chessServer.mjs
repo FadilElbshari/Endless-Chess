@@ -1,0 +1,550 @@
+import express from 'express';
+import session from 'express-session';
+import path from 'path'
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import mysql from 'mysql2'
+import bcrypt from 'bcrypt'
+import dotenv from 'dotenv';
+import validator from 'validator';
+
+dotenv.config();
+
+
+const errorMap = {
+  1062: "Used email or username",
+};
+
+export class ChessServer {
+    async init() {
+
+        // Server Constants
+        this.PORT = process.env.PORT;
+        this.saltRounds = 10;
+
+        // Setting up ExpressJs server
+        this.app = express();
+        const server = createServer(this.app);
+        this.ioServer = new Server(server);
+
+        
+        // Main access files directory for HTML assets
+        const __dirname = path.resolve();
+        this.app.use(express.static(path.join(__dirname, 'src')));
+
+        // Session data
+        const sessionMiddleware = session({
+            reconnection: true,
+            reconnectionDelay: 1000, 
+            reconnectionAttempts: 5,
+            reconnectionDelayMax: 5000,
+            randomizationFactor: 0.5,
+            secret: process.env.SECRET,
+            resave: false,
+            saveUninitialized: false,
+            cookie: { maxAge: 3600000 }
+        });
+
+        
+        // Linking session to express server and io server
+        this.app.use(sessionMiddleware);
+        this.app.use(express.json());
+        this.ioServer.use((socket, next) => {sessionMiddleware(socket.request, {}, next);});
+
+
+        // Database access point
+        this.dataBase = mysql.createPool({
+            host: process.env.DB_HOST,
+            port: process.env.DB_PORT,
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            database: process.env.DB_NAME,
+        }).promise();
+
+        // Matchmaking instance liked to the io server
+        this.matchmaking = new MatchMaking(this.ioServer, this.dataBase);
+
+        await this.handleRoutes();
+        await this.socketBinder();
+
+        server.listen(this.PORT, () => {
+            console.log(`Server Started at PORT: ${this.PORT}`);
+        });
+    }
+
+    async handleRoutes() {
+
+        // Starting home page: "/"
+        this.app.get('/', (req, res) => {
+            req.session.name = "Blah"// Get unique id
+            return res.sendFile(path.resolve('src/assets/html/home.html'));
+        });
+
+        // About page
+        this.app.get('/about', (req, res) => {
+            return res.sendFile(path.resolve('src/assets/html/about.html'));
+        });
+
+        // Play page
+        this.app.get('/play', (req, res) => {
+            return res.sendFile(path.resolve('src/assets/html/play.html'));
+        });
+
+        // Game redirection path
+        this.app.get('/game/:gameId/:color', (req, res) => {
+            if (!req.session.user) {
+                return res.redirect('/'); // Redirect to home if not logged in
+            }
+            return res.sendFile(path.resolve('src/assets/html/game.html'));
+        });
+
+        // User status check; "is logged in or not"
+        this.app.get('/api/check-session', (req, res) => {
+            if (req.session.user) {
+                return res.json({ loggedIn: true, username: req.session.user });
+            } else {
+                return res.json({ loggedIn: false });
+            }
+        });
+
+        // Login API call
+        this.app.post('/api/login', async (req, res) => {
+
+            try {
+                // Capture user data + search for user in database
+                const { username, password } = req.body;
+                const foundUser = await this.searchUser(username);
+
+                // Check if user exists
+                if (!foundUser || foundUser.length === 0) return res.status(404).json({ message: "User not Found; Incorrect Username." });
+
+                // Get expected password has, and compare entered password with stored hash
+                const receivedHash = await this.getHash(username);
+                const doesPasswordMatch = await bcrypt.compare(password, receivedHash);
+
+                if (doesPasswordMatch) {
+                    req.session.user = {
+                        id: foundUser[0].ID,
+                        username: foundUser[0].username,
+                        email: foundUser[0].email,
+                    };
+
+
+                    req.session.save((err) => {
+                        if (err) {
+                            console.error('Session save failed:', err);
+                            return res.status(500).json({ message: "Failed to save data to session" });
+                        }
+
+                        return res.json({ message: "Login successful" });
+                    });
+
+                } else {
+                    return res.status(401).json({ message: "Incorrect password" });
+                }
+
+            } catch (error) {
+                console.error("Error during signup:", error);
+                return res.status(500).json({ message: "Internal server error" , error: error});
+            }
+
+
+        });
+
+        // SignUp API call
+        this.app.post('/api/signup', async (req, res) => {
+            try {
+
+                // Capture user data; ensure all fields are filled approprietly
+                const { username, password, email } = req.body;
+                if (!username || !password || !email) return res.status(400).json({ message: "All fields are required" });
+
+                // Validate username
+                const isValidUsername = (/^[a-zA-Z0-9_]+$/.test(username)) && username.length >= 8;
+                if (!isValidUsername) return res.status(400).json({ message: "Invalid username, Characters and numbers, 8+ chars"});
+
+                // Validate email
+                const isValidEmail = validator.isEmail(String(email));
+                if (!isValidEmail) return res.status(400).json({message: "Invalid email format 'test@gmail.com'"});
+
+                // Validate password
+                const isValidPassword = validator.isStrongPassword(String(password), {
+                  minLength: 8,
+                  minLowercase: 1,
+                  minUppercase: 1,
+                  minNumbers: 1,
+                  minSymbols: 1
+                }); 
+                if (!isValidPassword) return res.status(400).json({message: "Invalid password, min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 symbol"});
+
+                // Create a new user and save it to database
+                const data = await this.createUser(username, password, email);
+                if (!data) return res.status(500).json({ message: "User creation failed" });
+
+                // Fetch the user details after creation
+                const user = await this.searchUser(username);
+                if (!user || user.length === 0) return res.status(404).json({ message: "User not found" });
+
+
+                req.session.user = {
+                    id: user[0].id,
+                    username: user[0].username,
+                    email: user[0].email,
+                };
+
+                req.session.save((err) => {
+                    if (err) {
+                        console.error('Session save failed:', err);
+                        return res.status(500).json({ message: "Failed to save session" });
+                    }
+                    return res.status(201).json({ message: "Signup successful", user: req.session.user });
+                });
+            } catch (error) {
+                console.error("Error during signup:", error);
+                return res.status(500).json({ message: errorMap[error.errno]});
+            }
+        });
+
+        // LogOut API call
+        this.app.post('/api/logout', (req, res) => {
+            // Clear session data and cookie
+            req.session.destroy(err => {
+                if (err) return res.status(500).send('Logout failed');
+                res.clearCookie('connect.sid'); // Clear session cookie
+                res.send('Logged out successfully');
+            });
+        });
+
+    }
+
+    async socketBinder() {
+        this.ioServer.on("connection", (socket) => {
+            console.log("New Connection: ", socket.id);
+
+            // Handle connection / disconnection
+            socket.on("reconnect", () => {
+                const session = socket.request.session;
+                console.log("Reconnection: ", socket.id)
+                if (session?.user) {
+                    const userId = session.user.id;
+                    const playerGame = this.matchmaking.getPlayerGame(userId);
+                    if (playerGame) {
+                        const { gameId } = playerGame;
+                        socket.join(`game_${gameId}`);
+                        socket.emit("reconnected", { gameId });
+                    }
+                }
+            });
+
+            socket.on("disconnect", () => {
+                const session = socket.request.session;
+                if (session?.user) {
+                    const userId = session.user.id;
+                    this.matchmaking.removeFromQueue(userId);
+
+                    const playerGame = this.matchmaking.getPlayerGame(userId);
+
+
+                if (playerGame) socket.to(`game_${playerGame.gameId}`).emit("opponentDisconnected");
+                }
+            });
+            // END_CONNECTION
+
+            // Handle queue and game data
+            socket.on("joinQueue", () => {
+                const session = socket.request.session;
+                if (!session.user) {socket.emit('error', { message: 'Must be logged in' }); return;}
+
+                const userId = session.user.id;
+                this.matchmaking.addToQueue(socket, userId);
+
+                console.log(`${session.user.username} has joined the queue`)
+
+                socket.emit('waitingForMatch');
+            });
+
+            socket.on('joinGame', async (gameId) => {
+                const session = socket.request.session;
+                if (!session.user) return;
+                try {
+
+                // Check if user is part of this game; make sure valid player
+                const [rows] = await this.dataBase.query(
+                    `SELECT g.*, 
+                        p1.username as player1_username,
+                        p2.username as player2_username,
+                        g.moves
+                    FROM games g
+                    JOIN users p1 ON g.player1_id = p1.id
+                    JOIN users p2 ON g.player2_id = p2.id
+                    WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?)`,
+                    [gameId, session.user.id, session.user.id]
+                );
+
+                if (rows.length > 0) {
+                    socket.join(`game_${gameId}`);
+                    socket.to(gameId).emit('opponentJoined');
+                    // Send initial game state
+                    socket.emit('gameState', {
+                        fen: rows[0].current_fen,
+                        moves: rows[0].moves,
+                        player1: {
+                            id: rows[0].player1_id,
+                            username: rows[0].player1_username
+                        },
+                        player2: {
+                            id: rows[0].player2_id,
+                            username: rows[0].player2_username
+                        }
+                    });
+                } else {
+                    socket.emit('error', { message: 'Not authorized to join this game' });
+                }
+                } catch (error) {
+                    console.error('Error joining game:', error);
+                    socket.emit('error', { message: 'Failed to join game'});
+                }
+            });
+
+            socket.on("move", async (data) => {
+                const session = socket.request.session;
+                if (!session.user) return;
+
+                const userId = session.user.id;
+                const playerGame = this.matchmaking.getPlayerGame(userId);
+
+                if (playerGame) {
+                    const { gameId } = playerGame;
+                    const move = data.notation
+
+                    try {
+                        // Update game in database
+                        await this.dataBase.query(
+                            "UPDATE games SET current_fen = ?, fen_history = JSON_ARRAY_APPEND(fen_history, '$', ?), moves = JSON_ARRAY_APPEND(moves, '$', ?) WHERE game_id = ?",
+                            [data.fen, data.fen, data.displayMove, gameId]
+                        );
+
+                        this.matchmaking.switchClock(gameId);
+
+                        // Emit move to opponent
+                        socket.to(`game_${gameId}`).emit("move_update", {
+                            move: move,
+                            gameId: gameId,
+                        });
+                    } catch (error) {
+                        console.error('Error updating game:', error);
+                    }
+                }
+            });
+
+            socket.on("gameOver", async (data) => {
+                const session = socket.request.session;
+
+                if (!session.user) return;
+
+                try {
+                    const userId = session.user.id;
+                    const playerGame = this.matchmaking.getPlayerGame(userId);
+                    const { gameId } = playerGame;
+                    // Update game status in database
+
+
+                    //matchmaking.activeMatches.delete(gameId);
+                    this.matchmaking.endGame(gameId, data.quote)
+
+                    // Broadcast to the other player
+
+
+                } catch (error) {
+                    console.error('Error updating game status:', error);
+                    socket.emit('error', { message: 'Failed to update game status' });
+                }
+            });
+        });
+    }
+
+    async searchUser(username) {
+        const [rows, fields] = await this.dataBase.query("SELECT * FROM users WHERE username = ?", [username]);
+        return rows;
+    }
+
+    async createUser(username, password, email) {
+        const hashedPassword = await bcrypt.hash(password, this.saltRounds);
+        const result = await this.dataBase.query("INSERT INTO users (username, email, password) VALUES (?, ?, ?);", [username, email, hashedPassword]);
+        return result[0];
+    }
+
+    async getHash(username) {
+        const result = await this.dataBase.query("SELECT password FROM users WHERE username = ?", [username]);
+        return result[0][0].password;
+    }
+}
+
+
+class MatchMaking {
+  constructor(io, db) {
+    this.io = io;
+    this.queue = [];
+    this.activeMatches = new Map();
+    this.dataBase = db;
+  }
+
+  startClock(gameId) {
+    const match = this.activeMatches.get(gameId);
+    if (!match) return;
+
+    // Initialize clock data if not already set
+    if (!match.clock) {
+      match.clock = {
+        whiteTime: 300, // 5 minutes in seconds for white
+        blackTime: 300, // 5 minutes in seconds for black
+        activeColor: 'white',
+      };
+    }
+
+    match.clock.timer = setInterval(() => {
+      const clock = match.clock;
+      if (clock.activeColor === 'white') {
+        clock.whiteTime--;
+      } else {
+        clock.blackTime--;
+      }
+
+      // Emit clock updates to clients
+      this.io.to(`game_${gameId}`).emit('clockUpdate', {
+        whiteTime: clock.whiteTime,
+        blackTime: clock.blackTime,
+      });
+
+      // Handle timeout
+      if (clock.whiteTime <= 0 || clock.blackTime <= 0) {
+        clearInterval(clock.timer);
+        const result = clock.whiteTime <= 0 ? 'black' : 'white'; // Winning color
+        this.endGame(gameId, `${result} wins on time`);
+      }
+    }, 1000);
+
+  }
+
+  stopClock(gameId) {
+    const match = this.activeMatches.get(gameId);
+    if (match?.clock?.timer) {
+      clearInterval(match.clock.timer);
+    }
+  }
+
+  switchClock(gameId) {
+    const match = this.activeMatches.get(gameId);
+    if (!match || !match.clock) return;
+
+    match.clock.activeColor = match.clock.activeColor === 'white' ? 'black' : 'white';
+  }
+
+  addToQueue(socket, userId) {
+    this.removeFromQueue(userId);
+
+    this.queue.push({
+      socket,
+      userId
+    });
+
+    return this.tryMatch();
+  }
+
+  removeFromQueue(userId) {
+    this.queue = this.queue.filter(player => player.userId !== userId);
+  }
+
+  async tryMatch() {
+    if (this.queue.length >= 2) {
+      const player1 = this.queue.shift();
+      const player2 = this.queue.shift();
+      try {
+
+        const initialFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; // Initial FEN for the game
+        const initialFenHistory = JSON.stringify([initialFEN]);
+        const moves = JSON.stringify([])
+        const clockStartingTime = 300
+        // Create game in database
+        const [result] = await this.dataBase.query(
+          "INSERT INTO games (player1_id, player2_id, outcome, current_fen, fen_history, moves, player1_clock, player2_clock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            player1.userId,
+            player2.userId,
+            0,
+            initialFEN,
+            initialFenHistory,
+            moves,
+            clockStartingTime,
+            clockStartingTime
+
+          ]
+        );
+
+        const gameId = result.insertId;
+        const match = {
+          gameId,
+          white: player1,
+          black: player2
+        };
+
+        player1.socket.join(`user_${player1.userId}`);
+        player2.socket.join(`user_${player2.userId}`);
+
+        this.activeMatches.set(gameId, match);
+
+        // Notify players
+
+        console.log("reached")
+        this.io.to(`user_${player1.userId}`).emit('matchFound', {
+          gameId,
+          color: 'white',
+          opponentId: player2.userId
+        });
+
+        this.io.to(`user_${player2.userId}`).emit('matchFound', {
+          gameId,
+          color: 'black',
+          opponentId: player1.userId
+        });
+
+        // Join game room
+        player1.socket.join(`game_${gameId}`);
+        player2.socket.join(`game_${gameId}`);
+
+        this.startClock(gameId)
+
+        return match;
+      } catch (error) {
+        console.error('Error creating game:', error);
+        // Put players back in queue if database insertion fails
+        this.queue.unshift(player2);
+        this.queue.unshift(player1);
+        return null;
+      }
+    }
+    return null;
+  }
+
+  getPlayerGame(userId) {
+    for (const [gameId, match] of this.activeMatches) {
+      if (match.white.userId === userId || match.black.userId === userId) {
+        return { gameId, match };
+      }
+    }
+    return null;
+  }
+
+  async endGame(gameId, result) {
+    // Handle game-over logic and notify clients
+    await this.dataBase.query(
+      "UPDATE games SET outcome = ? WHERE game_id = ?",
+      [1, gameId]  // data.result should be 'checkmate' or 'stalemate'
+    );
+
+    this.io.to(`game_${gameId}`).emit('gameOverBroad', { result });
+    this.stopClock(gameId);
+    this.activeMatches.delete(gameId);
+  }
+
+}
