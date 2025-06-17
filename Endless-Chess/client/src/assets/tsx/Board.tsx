@@ -315,11 +315,9 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
 
         const fromSquare = draggedPieceRef.current.parentNode as HTMLElement;
         const result = calculateValuesForPieceMovement(event, boardRef, flip);
-        if (!result) return;
-        const [argI, argJ] = result;
-        const toSquare = document.getElementById(`${String(argJ)}${String(argI)}`);
 
-        if (!toSquare) {
+        
+        if (!result) {
             console.warn("Dropped piece outside the board?");
             draggedPieceRef.current.style.transform = `translate(0px, 0px)`;
             draggedPieceRef.current.classList.remove("dragging");
@@ -331,6 +329,10 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
             return;
         }
 
+        const [argI, argJ] = result;
+        const toSquare = document.getElementById(`${String(argJ)}${String(argI)}`);
+
+        if (!toSquare) return;
 
         const notation = getMoveNotation(fromSquare, toSquare);
         const potentialEnPassantCaptureSquare = getEnPassantData(toSquare);
