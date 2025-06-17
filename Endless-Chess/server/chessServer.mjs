@@ -29,8 +29,6 @@ export class ChessServer {
 
         
         // Main access files directory for HTML assets
-        const __dirname = path.resolve();
-        this.app.use(express.static(path.join(__dirname, 'src')));
 
         // Session data
         const sessionMiddleware = session({
@@ -73,30 +71,6 @@ export class ChessServer {
     }
 
     async handleRoutes() {
-
-        // Starting home page: "/"
-        this.app.get('/', (req, res) => {
-            req.session.name = "Blah"// Get unique id
-            return res.sendFile(path.resolve('src/assets/html/home.html'));
-        });
-
-        // About page
-        this.app.get('/about', (req, res) => {
-            return res.sendFile(path.resolve('src/assets/html/about.html'));
-        });
-
-        // Play page
-        this.app.get('/play', (req, res) => {
-            return res.sendFile(path.resolve('src/assets/html/play.html'));
-        });
-
-        // Game redirection path
-        this.app.get('/game/:gameId/:color', (req, res) => {
-            if (!req.session.user) {
-                return res.redirect('/'); // Redirect to home if not logged in
-            }
-            return res.sendFile(path.resolve('src/assets/html/game.html'));
-        });
 
         // User status check; "is logged in or not"
         this.app.get('/api/check-session', (req, res) => {
