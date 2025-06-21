@@ -1,0 +1,171 @@
+.game-container {
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+    gap: 30px;
+    box-sizing: border-box;
+    flex-direction: row;
+}
+
+.board-section {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    align-items: center;
+    justify-content: center;
+}
+
+.player-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background-color: rgba(47, 51, 66, 0.95);
+    border-radius: 8px;
+    width: 75vmin;
+    box-sizing: border-box;
+    height: 60px;
+    min-width: 320px;
+    max-width: 700px;
+}
+
+.player-info {
+    justify-content: space-between;
+}
+
+.player-info .clock {
+    font-weight: bold;
+    font-size: large;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: static;
+    transform: none; 
+    margin-left: auto; 
+    width: auto;
+    padding: 0 15px;
+    height: 40px;
+}
+
+.connection {
+    position: static;
+    width: 1.2rem;
+    height: auto;
+    aspect-ratio: 1/1;
+    border-radius: 50%;
+    border: 2px solid #0e0f13;
+    background-color: green;
+    margin-left: auto;
+}
+
+
+.profile-pic {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid #2f3342;
+}
+
+.profile-pic img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.player-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.username {
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.rating {
+    color: #7aa2f7;
+    font-size: 14px;
+}
+
+.moves-buttons-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    height: 90vmin;
+    max-height: 700px;
+    min-height: 500px;
+    width: min(calc(90vmin * 0.625), 400px);
+    background-color: rgba(47, 51, 66, 0.95);
+    border-radius: 5px;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.resign-draw-buttons {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    aspect-ratio: 4/1;
+    gap: 1rem;
+}
+
+.game-btn {
+    width: 100%;
+    height: 100%;
+    font-size: 1.5 rem;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.end-container {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 20rem;
+    border-radius: 10px;
+    height: auto;
+    aspect-ratio: 1.5 / 1;
+    background-color: rgba(173, 179, 190, 0.95);
+    opacity: 1;
+    z-index: 1000;
+    gap: 1erm;
+}
+
+.jump-in {
+    animation: jumpIn 600ms ease forwards;
+} 
+
+@keyframes jumpIn {
+    from {
+        opacity: 0;
+        margin-top: 20rem;
+    }
+    to {
+        opacity: 1;
+        margin-top: 0rem;
+    }
+}
+
+.move-history {
+    
+}
+
+@media (max-width: 960px) {
+
+
+    .game-container {
+        flex-direction: column;
+    }
+}

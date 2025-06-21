@@ -1,6 +1,5 @@
 import express from 'express';
 import session from 'express-session';
-import path from 'path'
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import mysql from 'mysql2'
@@ -25,22 +24,28 @@ export class ChessServer {
         // Setting up ExpressJs server
         this.app = express();
         const server = createServer(this.app);
-        this.ioServer = new Server(server);
+        this.ioServer = new Server(server, {
+          cors: {
+            origin: 'http://localhost:3000',
+            methods: ['GET', 'POST'],
+            credentials: true,
+          }
+        });
 
         
         // Main access files directory for HTML assets
 
         // Session data
         const sessionMiddleware = session({
-            reconnection: true,
-            reconnectionDelay: 1000, 
-            reconnectionAttempts: 5,
-            reconnectionDelayMax: 5000,
             randomizationFactor: 0.5,
             secret: process.env.SECRET,
             resave: false,
             saveUninitialized: false,
-            cookie: { maxAge: 3600000 }
+            cookie: {
+              maxAge: 3600000,
+              httpOnly: true,
+              secure: false,
+            }
         });
 
         
@@ -71,7 +76,6 @@ export class ChessServer {
     }
 
     async handleRoutes() {
-
         // User status check; "is logged in or not"
         this.app.get('/api/check-session', (req, res) => {
             if (req.session.user) {
@@ -98,7 +102,7 @@ export class ChessServer {
 
                 if (doesPasswordMatch) {
                     req.session.user = {
-                        id: foundUser[0].ID,
+                        id: foundUser[0].id,
                         username: foundUser[0].username,
                         email: foundUser[0].email,
                     };
@@ -193,22 +197,11 @@ export class ChessServer {
 
     async socketBinder() {
         this.ioServer.on("connection", (socket) => {
-            console.log("New Connection: ", socket.id);
-
-            // Handle connection / disconnection
-            socket.on("reconnect", () => {
-                const session = socket.request.session;
-                console.log("Reconnection: ", socket.id)
-                if (session?.user) {
-                    const userId = session.user.id;
-                    const playerGame = this.matchmaking.getPlayerGame(userId);
-                    if (playerGame) {
-                        const { gameId } = playerGame;
-                        socket.join(`game_${gameId}`);
-                        socket.emit("reconnected", { gameId });
-                    }
-                }
-            });
+            const session = socket.request.session;
+            const user = session?.user;
+            if (user) {
+              console.log('Socket connected for user:', user.username);
+            }
 
             socket.on("disconnect", () => {
                 const session = socket.request.session;
@@ -218,30 +211,33 @@ export class ChessServer {
 
                     const playerGame = this.matchmaking.getPlayerGame(userId);
 
-
-                if (playerGame) socket.to(`game_${playerGame.gameId}`).emit("opponentDisconnected");
+                if (playerGame) socket.to(`game_${playerGame.gameId}`).emit("opponent_disconnected");
                 }
             });
             // END_CONNECTION
 
             // Handle queue and game data
-            socket.on("joinQueue", () => {
+            socket.on("join-queue", (data) => {
+                const timeControl = data.timeControl;
+
                 const session = socket.request.session;
                 if (!session.user) {socket.emit('error', { message: 'Must be logged in' }); return;}
 
+                console.log(timeControl);
+
                 const userId = session.user.id;
-                this.matchmaking.addToQueue(socket, userId);
+                this.matchmaking.addToQueue(socket, userId, timeControl);
 
                 console.log(`${session.user.username} has joined the queue`)
 
                 socket.emit('waitingForMatch');
             });
 
-            socket.on('joinGame', async (gameId) => {
+            socket.on('join_game', async (gameId) => {
                 const session = socket.request.session;
                 if (!session.user) return;
-                try {
 
+                try {
                 // Check if user is part of this game; make sure valid player
                 const [rows] = await this.dataBase.query(
                     `SELECT g.*, 
@@ -256,10 +252,13 @@ export class ChessServer {
                 );
 
                 if (rows.length > 0) {
+                    console.log("Sending Connection")
                     socket.join(`game_${gameId}`);
-                    socket.to(gameId).emit('opponentJoined');
+                    socket.to(`game_${gameId}`).emit('opponent-connected');
+
                     // Send initial game state
-                    socket.emit('gameState', {
+                    socket.emit('game_state', {
+                        over: rows[0].quote,
                         fen: rows[0].current_fen,
                         moves: rows[0].moves,
                         player1: {
@@ -283,50 +282,51 @@ export class ChessServer {
             socket.on("move", async (data) => {
                 const session = socket.request.session;
                 if (!session.user) return;
-
-                const userId = session.user.id;
-                const playerGame = this.matchmaking.getPlayerGame(userId);
-
-                if (playerGame) {
-                    const { gameId } = playerGame;
-                    const move = data.notation
+                  
+                  if (data.gameId) {
+                    const gameId = data.gameId;
+                    const move = data.notation;
 
                     try {
+                      // Switch turns
+                      const match = this.matchmaking.activeMatches.get(Number(gameId));
+                      if (data.color === "white") {
+                        match.clock.whiteTime += timeControlMap[match.timeControl].inc;
+                      } else {
+                        match.clock.blackTime += timeControlMap[match.timeControl].inc;
+                      }
+
+                      this.matchmaking.switchClock(Number(gameId));
+                      // Emit move to opponent
+                        socket.to(`game_${gameId}`).emit("move_update", {
+                            move: move,
+                            gameId: gameId,
+                        });
+
                         // Update game in database
                         await this.dataBase.query(
                             "UPDATE games SET current_fen = ?, fen_history = JSON_ARRAY_APPEND(fen_history, '$', ?), moves = JSON_ARRAY_APPEND(moves, '$', ?) WHERE game_id = ?",
                             [data.fen, data.fen, data.displayMove, gameId]
                         );
 
-                        this.matchmaking.switchClock(gameId);
-
-                        // Emit move to opponent
-                        socket.to(`game_${gameId}`).emit("move_update", {
-                            move: move,
-                            gameId: gameId,
-                        });
                     } catch (error) {
                         console.error('Error updating game:', error);
                     }
                 }
             });
 
-            socket.on("gameOver", async (data) => {
+            socket.on("game_over", async (data) => {
                 const session = socket.request.session;
+                console.log(data);
 
                 if (!session.user) return;
 
                 try {
                     const userId = session.user.id;
-                    const playerGame = this.matchmaking.getPlayerGame(userId);
-                    const { gameId } = playerGame;
                     // Update game status in database
 
-
                     //matchmaking.activeMatches.delete(gameId);
-                    this.matchmaking.endGame(gameId, data.quote)
-
-                    // Broadcast to the other player
+                    this.matchmaking.endGame(Number(data.gameId), data.result, data.quote)
 
 
                 } catch (error) {
@@ -355,23 +355,56 @@ export class ChessServer {
 }
 
 
+
+const timeControlIndex = {
+    "1+0" :     0,
+    "3+0" :     1,
+    "3+2" :     2,
+    "5+0" :     3,
+    "5+5" :     4,
+    "10+0" :    5,
+    "10+1" :    6,
+    "15+10" :   7,
+    "30+0" :    8,
+
+};
+
+const timeControlMap = {
+    "1+0" :     {start: 60.0,     inc: 0},
+    "3+0" :     {start: 180.0,    inc: 0},
+    "3+2" :     {start: 180.0,    inc: 2},
+    "5+0" :     {start: 300.0,    inc: 0},
+    "5+5" :     {start: 300.0,    inc: 5},
+    "10+0" :    {start: 600.0,    inc: 0},
+    "10+1" :    {start: 600.0,    inc: 1},
+    "15+10" :   {start: 900.0,    inc: 10},
+    "30+0" :    {start: 1800.0,   inc: 0},
+
+};
+
+const outComes = {
+  0 : "ongoing" ,
+  1 : "white-win",
+  2 : "black-win",
+}
+
 class MatchMaking {
   constructor(io, db) {
     this.io = io;
-    this.queue = [];
+    this.queue = [[], [], [], [], [], [], [] ,[], []];
     this.activeMatches = new Map();
     this.dataBase = db;
   }
 
-  startClock(gameId) {
+  startClock(gameId, startTime) {
     const match = this.activeMatches.get(gameId);
     if (!match) return;
 
     // Initialize clock data if not already set
     if (!match.clock) {
       match.clock = {
-        whiteTime: 300, // 5 minutes in seconds for white
-        blackTime: 300, // 5 minutes in seconds for black
+        whiteTime: startTime,
+        blackTime: startTime,
         activeColor: 'white',
       };
     }
@@ -379,24 +412,26 @@ class MatchMaking {
     match.clock.timer = setInterval(() => {
       const clock = match.clock;
       if (clock.activeColor === 'white') {
-        clock.whiteTime--;
+        clock.whiteTime -= 0.1;
       } else {
-        clock.blackTime--;
+        clock.blackTime -= 0.1;
       }
-
-      // Emit clock updates to clients
-      this.io.to(`game_${gameId}`).emit('clockUpdate', {
-        whiteTime: clock.whiteTime,
-        blackTime: clock.blackTime,
-      });
 
       // Handle timeout
       if (clock.whiteTime <= 0 || clock.blackTime <= 0) {
         clearInterval(clock.timer);
-        const result = clock.whiteTime <= 0 ? 'black' : 'white'; // Winning color
-        this.endGame(gameId, `${result} wins on time`);
+        const result = clock.whiteTime <= 0 ? 2 : 1; // Winning color
+        this.endGame(gameId, result, `${result === 1 ? "White" : "Black"} won on time`);
       }
-    }, 1000);
+
+      // Emit clock updates to clients
+      this.io.to(`game_${gameId}`).emit('clock_update', {
+        whiteTime: (clock.whiteTime  < 0 ? 0 : clock.whiteTime),
+        blackTime: (clock.blackTime  < 0 ? 0 : clock.blackTime),
+      });
+
+      
+    }, 100);
 
   }
 
@@ -408,41 +443,43 @@ class MatchMaking {
   }
 
   switchClock(gameId) {
-    const match = this.activeMatches.get(gameId);
+    const match = this.activeMatches.get(Number(gameId));
     if (!match || !match.clock) return;
 
     match.clock.activeColor = match.clock.activeColor === 'white' ? 'black' : 'white';
   }
 
-  addToQueue(socket, userId) {
+  addToQueue(socket, userId, timeControl) {
     this.removeFromQueue(userId);
 
-    this.queue.push({
+    this.queue[timeControlIndex[timeControl]].push({
       socket,
       userId
     });
 
-    return this.tryMatch();
+    return this.tryMatch(timeControl);
   }
 
   removeFromQueue(userId) {
-    this.queue = this.queue.filter(player => player.userId !== userId);
+    for (let i=0; i<9; i++) this.queue[i] = this.queue[i].filter(player => player.userId !== userId);
   }
 
-  async tryMatch() {
-    if (this.queue.length >= 2) {
-      const player1 = this.queue.shift();
-      const player2 = this.queue.shift();
+  async tryMatch(timeControl) {
+    if (this.queue[timeControlIndex[timeControl]].length >= 2) {
+      const player1 = this.queue[timeControlIndex[timeControl]].shift();
+      const player2 = this.queue[timeControlIndex[timeControl]].shift();
       try {
-
+        
         const initialFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; // Initial FEN for the game
         const initialFenHistory = JSON.stringify([initialFEN]);
         const moves = JSON.stringify([])
-        const clockStartingTime = 300
+        const clockStartingTime = timeControlMap[timeControl].start;
+
         // Create game in database
         const [result] = await this.dataBase.query(
-          "INSERT INTO games (player1_id, player2_id, outcome, current_fen, fen_history, moves, player1_clock, player2_clock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO games (timecontrol, player1_id, player2_id, outcome, current_fen, fen_history, moves, player1_clock, player2_clock, quote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
+            timeControl,
             player1.userId,
             player2.userId,
             0,
@@ -450,7 +487,8 @@ class MatchMaking {
             initialFenHistory,
             moves,
             clockStartingTime,
-            clockStartingTime
+            clockStartingTime,
+            outComes[0],
 
           ]
         );
@@ -459,7 +497,8 @@ class MatchMaking {
         const match = {
           gameId,
           white: player1,
-          black: player2
+          black: player2,
+          timeControl: timeControl,
         };
 
         player1.socket.join(`user_${player1.userId}`);
@@ -469,24 +508,21 @@ class MatchMaking {
 
         // Notify players
 
-        console.log("reached")
-        this.io.to(`user_${player1.userId}`).emit('matchFound', {
+        this.io.to(`user_${player1.userId}`).emit('match_found', {
           gameId,
           color: 'white',
-          opponentId: player2.userId
         });
 
-        this.io.to(`user_${player2.userId}`).emit('matchFound', {
+        this.io.to(`user_${player2.userId}`).emit('match_found', {
           gameId,
           color: 'black',
-          opponentId: player1.userId
         });
 
         // Join game room
         player1.socket.join(`game_${gameId}`);
         player2.socket.join(`game_${gameId}`);
 
-        this.startClock(gameId)
+        this.startClock(gameId, clockStartingTime);
 
         return match;
       } catch (error) {
@@ -509,16 +545,21 @@ class MatchMaking {
     return null;
   }
 
-  async endGame(gameId, result) {
+  async endGame(gameId, result, quote) {
+
+    const match = this.activeMatches.get(gameId);
+    const whiteTime = match.clock.whiteTime;
+    const blackTime = match.clock.blackTime;
+
     // Handle game-over logic and notify clients
     await this.dataBase.query(
-      "UPDATE games SET outcome = ? WHERE game_id = ?",
-      [1, gameId]  // data.result should be 'checkmate' or 'stalemate'
+      "UPDATE games SET player1_clock = ?, player2_clock = ?, outcome = ?, quote = ? WHERE game_id = ?",
+      [(whiteTime  < 0 ? 0 : whiteTime), (blackTime  < 0 ? 0 : blackTime), result, quote, gameId]  // data.result should be 'checkmate' or 'stalemate'
     );
 
-    this.io.to(`game_${gameId}`).emit('gameOverBroad', { result });
-    this.stopClock(gameId);
-    this.activeMatches.delete(gameId);
+    this.io.to(`game_${gameId}`).emit('game_over_broad', { result, quote });
+    this.stopClock(Number(gameId));
+    this.activeMatches.delete(Number(gameId));
   }
 
 }

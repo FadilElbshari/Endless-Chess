@@ -1,29 +1,33 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import "../css/board.css";
+import "../../css/board.css";
+import socket from "../Socket";
 
-import pawn_w from '../images/chess/pawn_w.png';
-import bishop_w from '../images/chess/bishop_w.png';
-import knight_w from '../images/chess/knight_w.png';
-import rook_w from '../images/chess/rook_w.png';
-import queen_w from '../images/chess/queen_w.png';
-import king_w from '../images/chess/king_w.png';
+import pawn_w from '../../images/chess/pawn_w.png';
+import bishop_w from '../../images/chess/bishop_w.png';
+import knight_w from '../../images/chess/knight_w.png';
+import rook_w from '../../images/chess/rook_w.png';
+import queen_w from '../../images/chess/queen_w.png';
+import king_w from '../../images/chess/king_w.png';
 
-import pawn_b from '../images/chess/pawn_b.png';
-import bishop_b from '../images/chess/bishop_b.png';
-import knight_b from '../images/chess/knight_b.png';
-import rook_b from '../images/chess/rook_b.png';
-import queen_b from '../images/chess/queen_b.png';
-import king_b from '../images/chess/king_b.png';
+import pawn_b from '../../images/chess/pawn_b.png';
+import bishop_b from '../../images/chess/bishop_b.png';
+import knight_b from '../../images/chess/knight_b.png';
+import rook_b from '../../images/chess/rook_b.png';
+import queen_b from '../../images/chess/queen_b.png';
+import king_b from '../../images/chess/king_b.png';
 
 
 interface BoardProps {
+  allow: boolean;
   type: string; 
   size: string; 
   fen: string;
   flip?: boolean;
+  color: string;
+  gameId: number;
   getTurn: () => string;
   getLegalMoves: () => any;
-  makeMove: (move: string) => any;
+  makeMove: (move: string, isUpdate: boolean) => any;
   undoMove: () => void;
   getFen: () => string;
   checkGameOver: () => {isOver: boolean, result: number, quote: string};
@@ -57,13 +61,20 @@ const pieceImages = {
 
 const SELECT = 0;
 const DRAG = 1;
+const UPDATE = 2;
+
+const SHORT = 0;
+const LONG = 1;
+
+const WHITE = 1;
+const BLACK = 0;
 
 const letters = "abcdefgh";
 const pieces = "rnbqkRNBQKpP";
 const nums = "12345678";
 
 
-const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getLegalMoves, makeMove, undoMove, getFen, checkGameOver}) => {
+const Board: React.FC<BoardProps> = ({allow, type, size, fen, flip=false, color, gameId, getTurn, getLegalMoves, makeMove, undoMove, getFen, checkGameOver}) => {
 
   const boardRef = useRef<HTMLDivElement>(null);
   const squareRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -72,11 +83,30 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
 
   const legalMoveSquaresRef = useRef<HTMLElement[]>([]);
 
+  const RookSquaresRefs = useRef<[HTMLElement | null, HTMLElement | null][]>([]);
+  const RookToSquaresRefs = useRef<[HTMLElement | null, HTMLElement | null][]>([]);
+
   const mouseDownRef = useRef(false);
 
+  useEffect(() => {
+    socket.on("move_update", (data) => {
+        const notation = data.move;
+        const [fromId, toId] = getSquaresData(notation);
+        const fromSquare = squareRefs.current[fromId];
+        const toSquare = squareRefs.current[toId];
+
+        if (!fromSquare || !toSquare) return;
+
+        const turn = Number(getTurn() === "w");
+        const potentialEnPassantCaptureSquare = getEnPassantData(toSquare);
+
+        const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation, true);
+        animateMove(UPDATE, fromSquare, toSquare, enPassantFlagCheck, shortCastleFlag, longCastleFlag, potentialEnPassantCaptureSquare, turn);
+
+    });
+  }, []);
 
   // Mini Functions (Getters)
-
   const removeAllEnteries = () => {
     document.querySelectorAll(".entered").forEach((el) =>
         el.classList.remove("entered")
@@ -139,43 +169,60 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
     return [distanceX, distanceY]
   }
 
-  const animateMove = (moveType: number, fromSquare: HTMLElement, toSquare: HTMLElement, enPassantFlagCheck: boolean, shortCastleFlag: boolean, longCastleFlag: boolean, enPassantSquare: HTMLElement | null, isUndo=0, piece=null, enPassantPiece=null) => {
+  const animateMove = (moveType: number, fromSquare: HTMLElement, toSquare: HTMLElement, enPassantFlagCheck: boolean, shortCastleFlag: boolean, longCastleFlag: boolean, enPassantSquare: HTMLElement | null, turn: number, isUndo=0, piece=null, enPassantPiece=null) => {
         const [distanceX, distanceY] = getAnimatedMoveData(fromSquare, toSquare); 
 
-        const draggedPiece = draggedPieceRef.current;
-        const parentDSquare = draggedPiece?.parentNode as HTMLElement;
+        
+        if (moveType === UPDATE) {
+          const fromPiece = fromSquare.childNodes[1] as HTMLElement;
+          fromPiece.classList.add("animate-square");
+          fromPiece.style.transform = `translate(${flip ? -distanceX : distanceX}px, ${flip ? distanceY : -distanceY}px)`;
+          setTimeout(() => {
+              if (fromSquare.childNodes.length > 1) fromSquare.removeChild(fromSquare.childNodes[1]);
+              if (toSquare.childNodes.length > 1) toSquare.removeChild(toSquare.childNodes[1]);
+              if (enPassantFlagCheck && enPassantSquare) enPassantSquare.removeChild(enPassantSquare.childNodes[1]);
+              toSquare.appendChild(fromPiece);
 
-        const selectedPiece = selectedPieceRef.current;
-        const parentSSquare = selectedPiece?.parentNode as HTMLElement;
+              fromPiece.style.transform = "translate(0px, 0px)"
+              fromPiece.classList.remove("animate-square")
+              selectedPieceRef.current = null;
+          }, 201);
 
-        if (moveType && parentDSquare && draggedPiece) {
-            parentDSquare.classList.remove("selected-square");
-            if (fromSquare.childNodes.length > 1) fromSquare.removeChild(fromSquare.childNodes[1]);
-            if (toSquare.childNodes.length > 1) toSquare.removeChild(toSquare.childNodes[1]);
-            if (enPassantFlagCheck && enPassantSquare) enPassantSquare.removeChild(enPassantSquare.childNodes[1]);
-            toSquare.appendChild(draggedPiece);
-            draggedPiece.style.transform = `translate(0px, 0px)`;
-        } else if (selectedPiece) {
-            selectedPiece.classList.add("animate-square");
-            parentSSquare.classList.remove("selected-square");
-            selectedPiece.style.transform = `translate(${flip ? -distanceX : distanceX}px, ${flip ? distanceY : -distanceY}px)`;
-            setTimeout(() => {
-                if (fromSquare.childNodes.length > 1) fromSquare.removeChild(fromSquare.childNodes[1]);
-                if (toSquare.childNodes.length > 1) toSquare.removeChild(toSquare.childNodes[1]);
-                if (enPassantFlagCheck && enPassantSquare) enPassantSquare.removeChild(enPassantSquare.childNodes[1]);
-                toSquare.appendChild(selectedPiece);
+        } else {
+          const draggedPiece = draggedPieceRef.current;
+          const parentDSquare = draggedPiece?.parentNode as HTMLElement;
 
-                selectedPiece.style.transform = "translate(0px, 0px)"
-                selectedPiece.classList.remove("animate-square")
-                selectedPieceRef.current = null;
-            }, 201);
-        }
+          const selectedPiece = selectedPieceRef.current;
+          const parentSSquare = selectedPiece?.parentNode as HTMLElement;
+
+          if (moveType === DRAG && parentDSquare && draggedPiece) {
+              parentDSquare.classList.remove("selected-square");
+              if (fromSquare.childNodes.length > 1) fromSquare.removeChild(fromSquare.childNodes[1]);
+              if (toSquare.childNodes.length > 1) toSquare.removeChild(toSquare.childNodes[1]);
+              if (enPassantFlagCheck && enPassantSquare) enPassantSquare.removeChild(enPassantSquare.childNodes[1]);
+              toSquare.appendChild(draggedPiece);
+              draggedPiece.style.transform = `translate(0px, 0px)`;
+          } else if (moveType === SELECT && selectedPiece) {
+              selectedPiece.classList.add("animate-square");
+              parentSSquare.classList.remove("selected-square");
+              selectedPiece.style.transform = `translate(${flip ? -distanceX : distanceX}px, ${flip ? distanceY : -distanceY}px)`;
+              setTimeout(() => {
+                  if (fromSquare.childNodes.length > 1) fromSquare.removeChild(fromSquare.childNodes[1]);
+                  if (toSquare.childNodes.length > 1) toSquare.removeChild(toSquare.childNodes[1]);
+                  if (enPassantFlagCheck && enPassantSquare) enPassantSquare.removeChild(enPassantSquare.childNodes[1]);
+                  toSquare.appendChild(selectedPiece);
+
+                  selectedPiece.style.transform = "translate(0px, 0px)"
+                  selectedPiece.classList.remove("animate-square")
+                  selectedPieceRef.current = null;
+              }, 201);
+          }
+      }
 
         if (shortCastleFlag) {
-            const turn = getTurn();
 
-            const rookSquare = document.getElementById(`${8}${turn === "w" ? 8 : 1}`);
-            const rookToSquare = document.getElementById(`${6}${turn === "w" ? 8 : 1}`);
+            const rookSquare = RookSquaresRefs.current[SHORT][turn];
+            const rookToSquare = RookToSquaresRefs.current[SHORT][turn];
 
             if (!rookSquare || !rookToSquare) return;
             const rookPiece = rookSquare.childNodes[1] as HTMLElement;
@@ -193,10 +240,9 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
             }, 201);
 
         } else if (longCastleFlag) {
-            const turn = getTurn();
 
-            const rookSquare = document.getElementById(`${1}${turn === "w" ? 8 : 1}`);
-            const rookToSquare = document.getElementById(`${4}${turn === "w" ? 8 : 1}`);
+            const rookSquare = RookSquaresRefs.current[LONG][turn];
+            const rookToSquare = RookToSquaresRefs.current[LONG][turn];
 
             if (!rookSquare || !rookToSquare) return;
             const rookPiece = rookSquare.childNodes[1] as HTMLElement;
@@ -240,7 +286,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
 
     if (selectedPieceRef.current && selectedPieceRef.current === piece) {
       handleClickInsideBoard(squareId);
-    } else if (piece && piece.id && piece.id[0] === getTurn()) {
+    } else if (piece && piece.id && piece.id[0] === getTurn() && color === getTurn()) {
       event.preventDefault();
 
       draggedPieceRef.current = piece;
@@ -351,12 +397,12 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
                return;
          }
 
-
-        const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation);
+        const turn = Number(getTurn() === "w");
+        const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation, false);
 
         if (status) {
             // moveCount++;
-            animateMove(DRAG, fromSquare, toSquare, enPassantFlagCheck, shortCastleFlag, longCastleFlag, potentialEnPassantCaptureSquare);
+            animateMove(DRAG, fromSquare, toSquare, enPassantFlagCheck, shortCastleFlag, longCastleFlag, potentialEnPassantCaptureSquare, turn);
              const {isOver, result, quote} = checkGameOver();
             if (isOver) console.log("Game Over:", quote, "Result:", result);
         } else if (fromSquare === toSquare) {
@@ -372,6 +418,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
         mouseDownRef.current = false;
         draggedPieceRef.current = null;
   }, []);
+
   const handleClickInsideBoard = useCallback((targetSquareId: string) => {
     if (draggedPieceRef.current){
         draggedPieceRef.current.style.transform = `translate(0px, 0px)`;
@@ -384,18 +431,19 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
     if (!targetSquare) return;
     const pieceOnTarget = targetSquare.childNodes.length > 1 ? targetSquare.childNodes[1] as HTMLElement : null;
 
-    if (selectedPieceRef.current) {
+    if (selectedPieceRef.current && getTurn() === color) {
       const fromSquare = selectedPieceRef.current.parentNode as HTMLElement;
       const notation = getMoveNotation(fromSquare, targetSquare);
       const potentialEnPassantCaptureSquare = getEnPassantData(targetSquare);
 
       removeLegalMoves();
 
-      const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation);
+      const turn = Number(getTurn() === "w");
+      const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation, false);
 
       if (status) {
           //moveCount++;
-          animateMove(SELECT, fromSquare, targetSquare, enPassantFlagCheck, shortCastleFlag, longCastleFlag, potentialEnPassantCaptureSquare);
+          animateMove(SELECT, fromSquare, targetSquare, enPassantFlagCheck, shortCastleFlag, longCastleFlag, potentialEnPassantCaptureSquare, turn);
           fromSquare.classList.remove("selected-square");
           const {isOver, result, quote} = checkGameOver();
           if (isOver) console.log("Game Over:", quote, "Result:", result);
@@ -407,7 +455,8 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
 
           console.log("Invalid move:", notation);
 
-            if (pieceOnTarget && pieceOnTarget.id && pieceOnTarget.id[0] === getTurn()) {
+            if (pieceOnTarget && pieceOnTarget.id && pieceOnTarget.id[0] === getTurn() && color === getTurn()) {
+              console.log(color);
               const parentSSquare = selectedPieceRef.current.parentNode as HTMLElement;
               fromSquare.classList.remove("selected-square");
               selectedPieceRef.current = pieceOnTarget;
@@ -421,7 +470,7 @@ const Board: React.FC<BoardProps> = ({type, size, fen, flip=false, getTurn, getL
       }
 
   } else {
-      if (pieceOnTarget && pieceOnTarget.id && pieceOnTarget.id[0] === getTurn()) {
+      if (pieceOnTarget && pieceOnTarget.id && pieceOnTarget.id[0] === getTurn() && color === getTurn()) {
           selectedPieceRef.current = pieceOnTarget;
           if (!selectedPieceRef.current) return;
           const parentSSquare = selectedPieceRef.current.parentNode as HTMLElement;
@@ -466,12 +515,20 @@ useEffect(() => {
 }, [boardRef, handleClickOutsideBoard]);
 
 
+useEffect(() => {
+  RookSquaresRefs.current = [[squareRefs.current["88"], squareRefs.current["81"]], [squareRefs.current["18"], squareRefs.current["11"]]];
+  RookToSquaresRefs.current = [[squareRefs.current["68"], squareRefs.current["61"]], [squareRefs.current["48"], squareRefs.current["41"]]];
+}, [squareRefs])
+
   const board = parseFen(fen);
+  const finalBoard = flip ? [...board].reverse() : board;
+
   return (
-    <div ref={boardRef} onPointerDown={handlePointerDown} className="board" style={{width: `${size}vmin`}} draggable={false}>
+    <div ref={boardRef} onPointerDown={handlePointerDown} className="board" style={{width: `${size}vmin`, pointerEvents: `${allow ? "all" : "none"}`}} draggable={false} >
       {
-      board.map((row, i) => 
-        row.map((square, j) => {
+      finalBoard.map((row, i) => { 
+        const finalRow = flip ? [...row].reverse() : row;
+        return ( finalRow.map((square, j) => {
           const argI = flip ? i + 1 : 8 - i;
           const argJ = flip ? 8 - j : j + 1;
           const squareId = `${argJ}${argI}`;
@@ -498,7 +555,7 @@ useEffect(() => {
             </div>
           )
 
-        }))
+        }))})
       }
     </div>
   )
@@ -580,6 +637,13 @@ const calculateValuesForPieceMovement = (
 
 const getMoveNotation = (fromSquare: HTMLElement, toSquare: HTMLElement): string => {
         return `${letters[Number(fromSquare.id[0]) - 1]}${Number(fromSquare.id[1])}${letters[Number(toSquare.id[0]) - 1]}${Number(toSquare.id[1])}`;
+}
+
+const getSquaresData = (notation: string): [string, string] => {
+  const from = notation.substr(0, 2);
+  const to = notation.substr(2, 4);
+  
+  return [`${letters.search(from[0])+1}${from[1]}`, `${letters.search(to[0])+1}${to[1]}`];
 }
 
 
