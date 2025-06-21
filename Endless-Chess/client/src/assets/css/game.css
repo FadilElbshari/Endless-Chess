@@ -125,6 +125,7 @@
     border: none;
     border-radius: 10px;
     cursor: pointer;
+    border: black solid 2px;
 }
 
 .end-container {

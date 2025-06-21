@@ -22,7 +22,7 @@ const NavBar: React.FC<NavBarProps> = ({isLoggedIn, logoutReq, showModal}) => {
                         <a id="trigger-modal" onClick={showModal}>Login</a>
                         )}
                     <a href="#">Watch</a>
-                    <a href="#">Community</a>
+                    <a onClick={()=>window.location.href = "/about"}>About</a>
                 </div>
             </div>
         </nav>

@@ -8,10 +8,9 @@ import "../../css/game.css";
 import placeholder_img from "../../images/placeholder.jpg";
 
 interface GameProps {
-    timeControl: string;
 }
 
-const Game: React.FC<GameProps> = ({ timeControl }) => {
+const Game: React.FC<GameProps> = ({}) => {
     const [game, setGame] = useState<any>(null);
     const [isOver, setIsOver] = useState<string>('');
     const [buttonStatus, setButtonStatus] = useState<boolean>(false);

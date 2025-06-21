@@ -16,7 +16,7 @@ function App() {
           <Route path="/home" element={<Home />} />
           <Route path="/play" element={<Play />} />
           <Route path="/about" element={<About />} />
-          <Route path="/game/:gameId/:color" element={<Game timeControl='blitz' />} />
+          <Route path="/game/:gameId/:color" element={<Game  />} />
         </Routes>
       </main>
       <Footer />

@@ -118,7 +118,7 @@ export class ChessServer {
                     });
 
                 } else {
-                    return res.status(401).json({ message: "Incorrect password" });
+                    return res.status(401).json({ message: "Incorrect Credetials" });
                 }
 
             } catch (error) {
@@ -210,6 +210,18 @@ export class ChessServer {
                     this.matchmaking.removeFromQueue(userId);
 
                     const playerGame = this.matchmaking.getPlayerGame(userId);
+                    if (!playerGame) return;
+
+                    const { gameId } = playerGame; 
+                    if (userId === playerGame.match.white.userId) {
+                      playerGame.match.white.timeout = setTimeout(()=>{
+                        this.matchmaking.endGame(Number(gameId), 2, `Black won on abandonment`);
+                      }, 15000);
+                    } else if (userId === playerGame.match.black.userId) {
+                      playerGame.match.black.timeout = setTimeout(()=>{
+                       this.matchmaking.endGame(Number(gameId), 1, `White won on abandonment`);
+                      }, 15000);
+                    }
 
                 if (playerGame) socket.to(`game_${playerGame.gameId}`).emit("opponent_disconnected");
                 }
@@ -222,8 +234,6 @@ export class ChessServer {
 
                 const session = socket.request.session;
                 if (!session.user) {socket.emit('error', { message: 'Must be logged in' }); return;}
-
-                console.log(timeControl);
 
                 const userId = session.user.id;
                 this.matchmaking.addToQueue(socket, userId, timeControl);
@@ -238,6 +248,8 @@ export class ChessServer {
                 if (!session.user) return;
 
                 try {
+                  const userId = session.user.id;
+
                 // Check if user is part of this game; make sure valid player
                 const [rows] = await this.dataBase.query(
                     `SELECT g.*, 
@@ -252,7 +264,6 @@ export class ChessServer {
                 );
 
                 if (rows.length > 0) {
-                    console.log("Sending Connection")
                     socket.join(`game_${gameId}`);
                     socket.to(`game_${gameId}`).emit('opponent-connected');
 
@@ -270,6 +281,17 @@ export class ChessServer {
                             username: rows[0].player2_username
                         }
                     });
+
+                    const playerGame = this.matchmaking.getPlayerGame(userId);
+                    if (!playerGame) return
+
+                    if (playerGame.match.white.timeout || playerGame.match.black.timeout) {
+                      if (userId === playerGame.match.white.userId) {
+                        clearTimeout(playerGame.match.white.timeout);
+                      } else if (userId === playerGame.match.black.userId) {
+                        clearTimeout(playerGame.match.black.timeout);
+                      }
+                    }
                 } else {
                     socket.emit('error', { message: 'Not authorized to join this game' });
                 }
@@ -317,7 +339,6 @@ export class ChessServer {
 
             socket.on("game_over", async (data) => {
                 const session = socket.request.session;
-                console.log(data);
 
                 if (!session.user) return;
 
