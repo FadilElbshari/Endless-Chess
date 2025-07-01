@@ -18,5 +18,8 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
+    allowedHosts: [
+      "onlinechess.xyz",
+    ]
   },
 })

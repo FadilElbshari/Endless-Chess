@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import "../../css/board.css";
 import socket from "../Socket";
 
@@ -66,15 +66,16 @@ const UPDATE = 2;
 const SHORT = 0;
 const LONG = 1;
 
-const WHITE = 1;
-const BLACK = 0;
+// const WHITE = 1;
+// const BLACK = 0;
 
 const letters = "abcdefgh";
-const pieces = "rnbqkRNBQKpP";
-const nums = "12345678";
+// const pieces = "rnbqkRNBQKpP";
+// const nums = "12345678";
 
 
 const Board: React.FC<BoardProps> = ({allow, type, size, fen, flip=false, color, gameId, getTurn, getLegalMoves, makeMove, undoMove, getFen, checkGameOver}) => {
+
 
   const boardRef = useRef<HTMLDivElement>(null);
   const squareRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
