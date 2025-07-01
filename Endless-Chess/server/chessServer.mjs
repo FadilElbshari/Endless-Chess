@@ -7,8 +7,10 @@ import bcrypt from 'bcrypt'
 import dotenv from 'dotenv';
 import validator from 'validator';
 
-dotenv.config();
 
+const env_file = "../.env";
+
+dotenv.config({path: env_file});
 
 const errorMap = {
   1062: "Used email or username",
@@ -18,21 +20,21 @@ export class ChessServer {
     async init() {
 
         // Server Constants
-        this.PORT = process.env.PORT;
+        this.PORT = process.env.PORTS;
+        this.URL = 
         this.saltRounds = 10;
+
 
         // Setting up ExpressJs server
         this.app = express();
         const server = createServer(this.app);
         this.ioServer = new Server(server, {
           cors: {
-            origin: 'http://localhost:3000',
+            origin: `${process.env.URL}:${process.env.PORTC}`,
             methods: ['GET', 'POST'],
             credentials: true,
           }
-        });
-
-        
+        });        
         // Main access files directory for HTML assets
 
         // Session data
@@ -122,7 +124,7 @@ export class ChessServer {
                 }
 
             } catch (error) {
-                console.error("Error during signup:", error);
+                console.error("Error during login:", error);
                 return res.status(500).json({ message: "Internal server error" , error: error});
             }
 

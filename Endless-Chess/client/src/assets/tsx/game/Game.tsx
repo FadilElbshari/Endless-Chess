@@ -191,7 +191,7 @@ const Game: React.FC<GameProps> = ({}) => {
                     <div className="end-container hide" id="end">
                         {isOver}
                         <div className="buttons-container">
-                            <button>Join Queue</button>
+                            <button onClick={()=>window.location.href="/play"}>Back to Play</button>
                             <button>Offer Rematch</button>
                         </div>
                     </div>

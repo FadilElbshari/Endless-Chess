@@ -11,10 +11,10 @@ const About = () => {
     useEffect(() => {
         const checkLoginStatus = async() => {
             try {
-                const res = await fetch('/api/check-session');
-                if (!res.ok) throw new Error('Failed to fetch login status');
+                const response = await fetch('/api/check-session');
+                if (!response.ok) throw new Error('Failed to fetch login status');
 
-                const data = await res.json();
+                const data = await response.json();
                 setIsLoggedIn(data.loggedIn);
 
             } catch (error) {
