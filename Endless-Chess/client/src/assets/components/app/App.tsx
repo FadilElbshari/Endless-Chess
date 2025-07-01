@@ -1,9 +1,9 @@
 import { Routes, Route } from 'react-router-dom';
-import Game from '../game/Game'
-import Home from '../home-components/Home';
-import Play from '../play/Play';
-import About from '../about/About';
-import Footer from '../home-components/Footer';
+import Game from '@components/game/Game'
+import Home from '@components/home-components/Home';
+import Play from '@components/play/Play';
+import About from '@components/about/About';
+import Footer from '@components/home-components/Footer';
 
 function App() {
 

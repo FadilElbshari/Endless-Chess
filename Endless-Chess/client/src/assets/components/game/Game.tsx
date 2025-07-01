@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import socket from "../Socket";
+import socket from "@components/Socket";
 // @ts-ignore
-import createChessModule from "../../engine/chess.js";
-import Board from "../board/Board.tsx";
-import "../../css/game.css";
-import placeholder_img from "../../images/placeholder.jpg";
+import createChessModule from "@engine/chess.js";
+import Board from "@components/board/Board";
+import "@styles/game.css";
+import placeholder_img from "@images/placeholder.jpg";
 
 interface GameProps {
 }

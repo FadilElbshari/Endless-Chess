@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect } from "react";
-import NavBar from "./Nav";
-import LoginSignup from "./LoginSignup";
-import socket from "../Socket";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import NavBar from "@components/home-components/Nav";
+import LoginSignup from "@components/home-components/LoginSignup";
+// @ts-ignore
+import socket from "@components/Socket";
+
 
 const Home = () => {
 
-    const navigate = useNavigate();
     const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
     const [isModalOpen, setModalOpen] = useState(false);
 

@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect } from "react";
-import socket from "../Socket";
+import { useState, useRef } from "react";
 
 
 interface ModalProps {
@@ -7,12 +6,12 @@ interface ModalProps {
     onClose: () => void;
 }
 
-const LOGIN = 1;
-const SIGNUP = 0;
+// const LOGIN = 1;
+// const SIGNUP = 0;
 
 const LoginSignup: React.FC<ModalProps> = ({isOpen, onClose}) => {
     const loginLinkRef = useRef<HTMLDivElement>(null);
-    const signupLinkRef = useRef<HTMLDivElement>(null);
+    // const signupLinkRef = useRef<HTMLDivElement>(null);
 
     const [mode, setMode] = useState<"login" | "signup">("login");
     const [error, setError] = useState<string | null>(null);

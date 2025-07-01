@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect } from "react";
-import "../../css/Home.css"
+import "@styles/home.css"
 
 interface NavBarProps {
     isLoggedIn: boolean;

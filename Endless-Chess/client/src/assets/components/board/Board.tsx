@@ -1,21 +1,20 @@
 import { useEffect, useRef, useCallback } from "react";
-import "../../css/board.css";
-import socket from "../Socket";
+import "@styles/board.css";
+import socket from "@components/Socket";
 
-import pawn_w from '../../images/chess/pawn_w.png';
-import bishop_w from '../../images/chess/bishop_w.png';
-import knight_w from '../../images/chess/knight_w.png';
-import rook_w from '../../images/chess/rook_w.png';
-import queen_w from '../../images/chess/queen_w.png';
-import king_w from '../../images/chess/king_w.png';
+import pawn_w from '@images/chess/pawn_w.png';
+import bishop_w from '@images/chess/bishop_w.png';
+import knight_w from '@images/chess/knight_w.png';
+import rook_w from '@images/chess/rook_w.png';
+import queen_w from '@images/chess/queen_w.png';
+import king_w from '@images/chess/king_w.png';
 
-import pawn_b from '../../images/chess/pawn_b.png';
-import bishop_b from '../../images/chess/bishop_b.png';
-import knight_b from '../../images/chess/knight_b.png';
-import rook_b from '../../images/chess/rook_b.png';
-import queen_b from '../../images/chess/queen_b.png';
-import king_b from '../../images/chess/king_b.png';
-
+import pawn_b from '@images/chess/pawn_b.png';
+import bishop_b from '@images/chess/bishop_b.png';
+import knight_b from '@images/chess/knight_b.png';
+import rook_b from '@images/chess/rook_b.png';
+import queen_b from '@images/chess/queen_b.png';
+import king_b from '@images/chess/king_b.png';
 
 interface BoardProps {
   allow: boolean;
@@ -73,7 +72,7 @@ const letters = "abcdefgh";
 // const pieces = "rnbqkRNBQKpP";
 // const nums = "12345678";
 
-
+// @ts-ignore
 const Board: React.FC<BoardProps> = ({allow, type, size, fen, flip=false, color, gameId, getTurn, getLegalMoves, makeMove, undoMove, getFen, checkGameOver}) => {
 
 
@@ -101,6 +100,7 @@ const Board: React.FC<BoardProps> = ({allow, type, size, fen, flip=false, color,
         const turn = Number(getTurn() === "w");
         const potentialEnPassantCaptureSquare = getEnPassantData(toSquare);
 
+        // @ts-ignore
         const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation, true);
         animateMove(UPDATE, fromSquare, toSquare, enPassantFlagCheck, shortCastleFlag, longCastleFlag, potentialEnPassantCaptureSquare, turn);
 
@@ -170,6 +170,7 @@ const Board: React.FC<BoardProps> = ({allow, type, size, fen, flip=false, color,
     return [distanceX, distanceY]
   }
 
+  // @ts-ignore
   const animateMove = (moveType: number, fromSquare: HTMLElement, toSquare: HTMLElement, enPassantFlagCheck: boolean, shortCastleFlag: boolean, longCastleFlag: boolean, enPassantSquare: HTMLElement | null, turn: number, isUndo=0, piece=null, enPassantPiece=null) => {
         const [distanceX, distanceY] = getAnimatedMoveData(fromSquare, toSquare); 
 
@@ -399,6 +400,7 @@ const Board: React.FC<BoardProps> = ({allow, type, size, fen, flip=false, color,
          }
 
         const turn = Number(getTurn() === "w");
+        // @ts-ignore
         const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation, false);
 
         if (status) {
@@ -440,6 +442,7 @@ const Board: React.FC<BoardProps> = ({allow, type, size, fen, flip=false, color,
       removeLegalMoves();
 
       const turn = Number(getTurn() === "w");
+      // @ts-ignore
       const [status, enPassantFlagCheck, shortCastleFlag, longCastleFlag, displayMove] = makeMove(notation, false);
 
       if (status) {

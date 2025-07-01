@@ -20,6 +20,16 @@ export default defineConfig({
     },
     allowedHosts: [
       "onlinechess.xyz",
+      "localhost",
     ]
   },
+
+    resolve: {
+    alias: {
+      '@styles': '/src/assets/styles',
+      '@components': '/src/assets/components',
+      '@images': '/src/assets/images',
+      '@engine': '/src/assets/engine',
+    }
+  }
 })

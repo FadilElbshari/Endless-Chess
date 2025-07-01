@@ -1,6 +1,4 @@
-import { useState, useRef, useEffect } from "react";
-import "../../css/play.css";
-import LoginSignup from "../home-components/LoginSignup";
+import "@styles/play.css"
 
 
 interface GameBoxProps {
@@ -13,6 +11,7 @@ interface GameBoxProps {
 
 type timeControlType = {start: number, inc: number};
 
+// @ts-ignore
 const timeControlMap: Record<string, timeControlType> = {
     "1+0" :     {start: 60,     inc: 0},
     "3+0" :     {start: 180,    inc: 0},
