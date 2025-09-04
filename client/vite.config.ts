@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 const env_file = "../.env";
 dotenv.config({path: env_file});
 
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -13,14 +14,15 @@ export default defineConfig({
     port: Number(process.env.REACT_APP_PORTC),
     proxy: {
       '/api': {
-        target: `${process.env.REACT_APP_URL}:${process.env.REACT_APP_PORTS}/api`,
+        target: `${process.env.REACT_APP_URL}:${process.env.REACT_APP_PORTS}`,
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        // rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
     allowedHosts: [
       "onlinechess.xyz",
       "localhost",
+      "172.20.10.10",
     ]
   },
 
