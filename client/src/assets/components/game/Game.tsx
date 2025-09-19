@@ -38,11 +38,12 @@ const Game: React.FC<GameProps> = ({}) => {
             setFen(data.fen);
             setUsername1(data.player1.username);
             setUsername2(data.player2.username);
-            console.log(data.over)
+            setTime1(data.player1.clock);
+            setTime2(data.player2.clock);
+            setAllowed(data.allow);
+            setButtonStatus(data.allow);
             if (data.over !== "ongoing") {
                 setIsOver(data.over);
-                setAllowed(false);
-                setButtonStatus(true);
             }
         };
 
@@ -62,6 +63,10 @@ const Game: React.FC<GameProps> = ({}) => {
             setTime2(data.blackTime);
         });
 
+        socket.on("draw_offered", ()=>{
+            console.log("Draw Offered")
+        })
+
         socket.on("game_over_broad", (data) => {
             console.log(data);
             if (!resignBtnRef.current) return;
@@ -76,7 +81,6 @@ const Game: React.FC<GameProps> = ({}) => {
     }, []);
 
     useEffect (() => {
-        console.log(fen);
         if (!fen) return;
         async function loadModule() {
             try {
@@ -97,8 +101,8 @@ const Game: React.FC<GameProps> = ({}) => {
     useEffect(() => {
         if (!time1Ref.current || !time2Ref.current) return;
 
-        time1Ref.current.textContent = flip ? formatTime(time2) : formatTime(time1);
-        time2Ref.current.textContent = flip ? formatTime(time1) : formatTime(time2);
+        // time1Ref.current.textContent = flip ? formatTime(time2) : formatTime(time1);
+        // time2Ref.current.textContent = flip ? formatTime(time1) : formatTime(time2);
 
     }, [time1, time2])
 
@@ -167,8 +171,8 @@ const Game: React.FC<GameProps> = ({}) => {
                             <span className="username">{flip ? username2 : username1}</span>
                             <span className="rating">0000</span>
                         </div>
-                        <div className="connection"></div>
-                        <div className={`clock${flip ? " white" : " black"}`} ref={time2Ref}>00:00:00</div>
+                        {/* <div className="connection"></div> */}
+                        <div className={`clock${flip ? " white" : " black"}`} ref={time2Ref}>{flip ? formatTime(time1) : formatTime(time2)}</div>
                     </div>
                     
                     <Board
@@ -192,7 +196,7 @@ const Game: React.FC<GameProps> = ({}) => {
                         {isOver}
                         <div className="buttons-container">
                             <button onClick={()=>window.location.href="/play"}>Back to Play</button>
-                            <button>Offer Rematch</button>
+                            <button disabled={buttonStatus}>Offer Rematch</button>
                         </div>
                     </div>
                     }
@@ -205,14 +209,16 @@ const Game: React.FC<GameProps> = ({}) => {
                             <span className="username">{flip ? username1 : username2}</span>
                             <span className="rating">0000</span>
                         </div>
-                        <div className="connection"></div>
-                        <div className={`clock${!flip ? " white" : " black"}`} ref={time1Ref}>00:00:00</div>
+                        {/* <div className="connection"></div> */}
+                        <div className={`clock${!flip ? " white" : " black"}`} ref={time1Ref}>{flip ? formatTime(time2) : formatTime(time1)}</div>
                     </div>
                 </div>
                     <div className="moves-buttons-container" id="moves">
                         <div className="resign-draw-buttons">
                             <button className="game-btn" ref={resignBtnRef} disabled={buttonStatus}>Resign</button>
-                            <button className="game-btn" disabled={buttonStatus}>Draw</button>
+                            <button className="game-btn" disabled={buttonStatus} onClick={() => {
+                                socket.emit("draw_request", {gameId});
+                            }}>Draw</button>
                         </div>
                         <div className="move-history" id="history">
                             <ul id="moves-list">

@@ -247,59 +247,64 @@ export class ChessServer {
 
             socket.on('join_game', async (gameId) => {
                 const session = socket.request.session;
-                if (!session.user) return;
-
-                try {
-                  const userId = session.user.id;
 
                 // Check if user is part of this game; make sure valid player
                 const [rows] = await this.dataBase.query(
                     `SELECT g.*, 
                         p1.username as player1_username,
-                        p2.username as player2_username,
-                        g.moves
+                        p2.username as player2_username
                     FROM games g
                     JOIN users p1 ON g.player1_id = p1.id
                     JOIN users p2 ON g.player2_id = p2.id
-                    WHERE g.game_id = ? AND (g.player1_id = ? OR g.player2_id = ?)`,
-                    [gameId, session.user.id, session.user.id]
+                    WHERE g.game_id = ?`,
+                    [gameId]
                 );
+
+                let allow = false;
 
                 if (rows.length > 0) {
                     socket.join(`game_${gameId}`);
-                    socket.to(`game_${gameId}`).emit('opponent-connected');
+                  
+                  if (session.user && (rows[0].player1_id == session.user.id || rows[0].player2_id == session.user.id)) {
 
+                    const userId = session.user.id;
+                    if (rows[0].quote == "ongoing") {
+                      socket.to(`game_${gameId}`).emit('opponent-connected');
+                      allow = true;
+
+                      const playerGame = this.matchmaking.getPlayerGame(userId);
+                      if (!playerGame) return
+
+                      if (playerGame.match.white.timeout || playerGame.match.black.timeout) {
+                        if (userId === playerGame.match.white.userId) {
+                          clearTimeout(playerGame.match.white.timeout);
+                        } else if (userId === playerGame.match.black.userId) {
+                          clearTimeout(playerGame.match.black.timeout);
+                      }
+                    }
+                    }
+                  }
                     // Send initial game state
                     socket.emit('game_state', {
+                        allow: allow,
                         over: rows[0].quote,
                         fen: rows[0].current_fen,
                         moves: rows[0].moves,
                         player1: {
                             id: rows[0].player1_id,
-                            username: rows[0].player1_username
+                            username: rows[0].player1_username,
+                            clock: rows[0].player1_clock,
                         },
                         player2: {
                             id: rows[0].player2_id,
-                            username: rows[0].player2_username
+                            username: rows[0].player2_username,
+                            clock: rows[0].player2_clock,
                         }
                     });
 
-                    const playerGame = this.matchmaking.getPlayerGame(userId);
-                    if (!playerGame) return
-
-                    if (playerGame.match.white.timeout || playerGame.match.black.timeout) {
-                      if (userId === playerGame.match.white.userId) {
-                        clearTimeout(playerGame.match.white.timeout);
-                      } else if (userId === playerGame.match.black.userId) {
-                        clearTimeout(playerGame.match.black.timeout);
-                      }
-                    }
+                    
                 } else {
-                    socket.emit('error', { message: 'Not authorized to join this game' });
-                }
-                } catch (error) {
-                    console.error('Error joining game:', error);
-                    socket.emit('error', { message: 'Failed to join game'});
+                    socket.emit('error', { message: 'Unavailable game' });
                 }
             });
 
@@ -347,8 +352,6 @@ export class ChessServer {
                 try {
                     const userId = session.user.id;
                     // Update game status in database
-
-                    //matchmaking.activeMatches.delete(gameId);
                     this.matchmaking.endGame(Number(data.gameId), data.result, data.quote)
 
 
@@ -357,6 +360,10 @@ export class ChessServer {
                     socket.emit('error', { message: 'Failed to update game status' });
                 }
             });
+
+            socket.on("draw_request", (data) => {
+              socket.to(`game_${data.gameId}`).emit("draw_offered"); 
+            })
         });
     }
 
@@ -488,6 +495,7 @@ class MatchMaking {
   }
 
   async tryMatch(timeControl) {
+    console.log("Trying")
     if (this.queue[timeControlIndex[timeControl]].length >= 2) {
       const player1 = this.queue[timeControlIndex[timeControl]].shift();
       const player2 = this.queue[timeControlIndex[timeControl]].shift();
