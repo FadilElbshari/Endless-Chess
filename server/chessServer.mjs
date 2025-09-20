@@ -331,6 +331,8 @@ export class ChessServer {
                             move: move,
                             gameId: gameId,
                         });
+                        socket.emit("notation", {notation: data.displayMove});
+                        socket.to(`game_${gameId}`).emit("notation", {notation: data.displayMove});
 
                         // Update game in database
                         await this.dataBase.query(
@@ -363,6 +365,10 @@ export class ChessServer {
 
             socket.on("draw_request", (data) => {
               socket.to(`game_${data.gameId}`).emit("draw_offered"); 
+            })
+
+            socket.on("draw_rejected", (data) => {
+              socket.to(`game_${data.gameId}`).emit("draw_response");
             })
         });
     }

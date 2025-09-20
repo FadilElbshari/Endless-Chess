@@ -1,6 +1,6 @@
 import { io, Socket } from "socket.io-client";
 
-const URL = "http://172.20.10.7:3001";
+const URL = "http://localhost:3001";
 const socket: Socket = io(URL, {
   withCredentials: true,
 });
