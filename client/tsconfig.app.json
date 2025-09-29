@@ -25,12 +25,12 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
 
-    "baseUrl": "src/assets", 
+    "baseUrl": ".", 
     "paths": {
-      "@components/*" : ["components/*"],
-      "@styles/*" : ["styles/*"],
-      "@engine/*" : ["engine/*"],
-      "@images/*" : ["images/*"],
+      "@components/*" : ["src/components/*"],
+      "@styles/*" : ["src/styles/*"],
+      "@engine/*" : ["src/engine/*"],
+      "@images/*" : ["public/images/*"],
     },
 
   },

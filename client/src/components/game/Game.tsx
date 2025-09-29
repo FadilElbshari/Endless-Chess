@@ -5,7 +5,6 @@ import socket from "@components/Socket";
 import createChessModule from "@engine/chess.js";
 import Board from "@components/board/Board";
 import "@styles/game.css";
-import placeholder_img from "@images/placeholder.jpg";
 import NavBar from "@components/home-components/Nav";
 
 interface GameProps {
@@ -200,7 +199,7 @@ const Game: React.FC<GameProps> = ({}) => {
                 <div className="board-section">
                     <div className="player-info top">
                         <div className="profile-pic">
-                            <img src={placeholder_img}/>
+                            <img src="/api/images/placeholder.jpg"/>
                         </div>
                         <div className="player-details">
                             <span className="username">{flip ? username1 : username2}</span>
@@ -239,7 +238,7 @@ const Game: React.FC<GameProps> = ({}) => {
 
                     <div className="player-info bottom">
                         <div className="profile-pic">
-                            <img src={placeholder_img}/>
+                            <img src="/api/images/placeholder.jpg"/>
                         </div>
                         <div className="player-details">
                             <span className="username">{flip ? username2 : username1}</span>

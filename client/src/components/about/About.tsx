@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
-import NavBar from "@components/home-components/Nav";
-import LoginSignup from "@components/home-components/LoginSignup";
+import NavBar from "../home-components/Nav";
+import LoginSignup from "../home-components/LoginSignup";
 
 const About = () => {
 

@@ -4,25 +4,66 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import mysql from 'mysql2'
 import bcrypt from 'bcrypt'
+import * as crypto from 'crypto';
 import dotenv from 'dotenv';
 import validator from 'validator';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import path from 'path';
+import type { Request, ParamsDictionary, NextFunction } from 'express-serve-static-core';
+import type { ParsedQs } from 'qs';
 
+const DEV: boolean = true;
+let env_file = "";
+if (DEV) {
+  env_file = "../client/.env.development";
+} else {
+  env_file = "../client/.env.production";
+}
 
-const env_file = "../.env";
 
 dotenv.config({path: env_file});
 
-const errorMap = {
-  1062: "Used email or username",
+const errorMap: { [key: string]: string } = {
+  "1062": "Used email or username",
 };
 
-export class ChessServer {
-    async init() {
+interface PlayerInQueue {
+  socket: any;
+  userId: string | number;
+}
 
+export class ChessServer {
+  private __filename: string;
+  private __dirname: string;
+  private parentDir: string;
+  private PORT: string;
+  private saltRounds: number;
+  app: any;
+  ioServer: any;
+  dataBase: any;
+  matchmaking: MatchMaking;
+
+    constructor() {
+      this.__filename = "";
+      this.__dirname = "";
+      this.parentDir = "";
+      this.PORT = "";
+      this.saltRounds = 0;
+      this.matchmaking = new MatchMaking();
+    }
+    async init() {
+      
         // Server Constants
-        this.PORT = process.env.PORTS;
-        this.URL = 
+        if (!process.env.REACT_APP_PORT_SERVER) return;
+        this.PORT = process.env.REACT_APP_PORT_SERVER;
         this.saltRounds = 10;
+
+        this.__filename = fileURLToPath(import.meta.url);
+        this.__dirname = dirname(this.__filename);
+        this.parentDir = path.join(this.__dirname, '..');
+
+        console.log(this.parentDir);
 
 
         // Setting up ExpressJs server
@@ -30,17 +71,16 @@ export class ChessServer {
         const server = createServer(this.app);
         this.ioServer = new Server(server, {
           cors: {
-            origin: `${process.env.URL}:${process.env.PORTC}`,
+            origin: process.env.REACT_APP_CLIENT_URL,
             methods: ['GET', 'POST'],
             credentials: true,
           }
         });        
-        // Main access files directory for HTML assets
-
+        
+        const secretCode = process.env.SESSION_SECRET || '';
         // Session data
         const sessionMiddleware = session({
-            randomizationFactor: 0.5,
-            secret: process.env.SECRET,
+            secret: secretCode,
             resave: false,
             saveUninitialized: false,
             cookie: {
@@ -52,22 +92,31 @@ export class ChessServer {
 
         
         // Linking session to express server and io server
+        const fakeRes = {
+          getHeader: () => undefined,
+          setHeader: () => {},
+          end: () => {},
+        } as any;
+
         this.app.use(sessionMiddleware);
         this.app.use(express.json());
-        this.ioServer.use((socket, next) => {sessionMiddleware(socket.request, {}, next);});
+        this.ioServer.use((socket: { request: Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>; }, next: NextFunction) => {
+          const res = {} as Response;
+          sessionMiddleware(socket.request, fakeRes, next);
+        });
 
 
         // Database access point
         this.dataBase = mysql.createPool({
             host: process.env.DB_HOST,
-            port: process.env.DB_PORT,
+            port: Number(process.env.DB_PORT),
             user: process.env.DB_USER,
             password: process.env.DB_PASSWORD,
             database: process.env.DB_NAME,
         }).promise();
 
         // Matchmaking instance liked to the io server
-        this.matchmaking = new MatchMaking(this.ioServer, this.dataBase);
+        this.matchmaking.init(this.ioServer, this.dataBase);
 
         await this.handleRoutes();
         await this.socketBinder();
@@ -79,7 +128,7 @@ export class ChessServer {
 
     async handleRoutes() {
         // User status check; "is logged in or not"
-        this.app.get('/api/check-session', (req, res) => {
+        this.app.get('/api/check-session', (req: { session: { user: any; }; }, res: { json: (arg0: { loggedIn: boolean; username?: any; }) => any; }) => {
             if (req.session.user) {
                 return res.json({ loggedIn: true, username: req.session.user });
             } else {
@@ -88,8 +137,7 @@ export class ChessServer {
         });
 
         // Login API call
-        this.app.post('/api/login', async (req, res) => {
-
+        this.app.post('/api/login', async (req: { body: { username: any; password: any; }; session: { user: { id: any; username: any; email: any; }; save: (arg0: (err: any) => any) => void; }; }, res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; error?: unknown; }): any; new(): any; }; }; json: (arg0: { message: string; }) => any; }) => {
             try {
                 // Capture user data + search for user in database
                 const { username, password } = req.body;
@@ -110,7 +158,7 @@ export class ChessServer {
                     };
 
 
-                    req.session.save((err) => {
+                    req.session.save((err: any) => {
                         if (err) {
                             console.error('Session save failed:', err);
                             return res.status(500).json({ message: "Failed to save data to session" });
@@ -132,7 +180,7 @@ export class ChessServer {
         });
 
         // SignUp API call
-        this.app.post('/api/signup', async (req, res) => {
+        this.app.post('/api/signup', async (req: { body: { username: any; password: any; email: any; }; session: { user: { id: any; username: any; email: any; }; save: (arg0: (err: any) => any) => void; }; }, res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: any; user?: any; }): any; new(): any; }; }; }) => {
             try {
 
                 // Capture user data; ensure all fields are filled approprietly
@@ -172,33 +220,49 @@ export class ChessServer {
                     email: user[0].email,
                 };
 
-                req.session.save((err) => {
+                req.session.save((err: any) => {
                     if (err) {
                         console.error('Session save failed:', err);
                         return res.status(500).json({ message: "Failed to save session" });
                     }
                     return res.status(201).json({ message: "Signup successful", user: req.session.user });
                 });
-            } catch (error) {
+            } catch (error: unknown) {
                 console.error("Error during signup:", error);
-                return res.status(500).json({ message: errorMap[error.errno]});
+                const err = error as NodeJS.ErrnoException;
+                if (!err.errno) return;
+                const errorNo : number = err.errno;
+                const errorMsg: string = errorMap[errorNo.toString()] || "An unknown error occurred";
+                return res.status(500).json({ message: errorMsg});
             }
         });
 
         // LogOut API call
-        this.app.post('/api/logout', (req, res) => {
+        this.app.post('/api/logout', (req: { session: { destroy: (arg0: (err: any) => any) => void; }; }, res: { status: (arg0: number) => { (): any; new(): any; send: { (arg0: string): any; new(): any; }; }; clearCookie: (arg0: string) => void; send: (arg0: string) => void; }) => {
             // Clear session data and cookie
-            req.session.destroy(err => {
+            req.session.destroy((err: any) => {
                 if (err) return res.status(500).send('Logout failed');
                 res.clearCookie('connect.sid'); // Clear session cookie
                 res.send('Logged out successfully');
             });
         });
 
+        this.app.get('/api/images/:imageName', (req: { params: { imageName: any; }; }, res: { sendFile: (arg0: string, arg1: (err: any) => void) => void; status: (arg0: number) => { (): any; new(): any; send: { (arg0: string): void; new(): any; }; }; }) => {
+          const imageName = req.params.imageName;
+          const imagePath = path.join(this.parentDir, 'uploads', 'profiles', imageName);
+
+          res.sendFile(imagePath, (err: any) => {
+            if (err) {
+              console.error('File not found:', err);
+              res.status(404).send('Image not found');
+            }
+          });
+        })
+
     }
 
     async socketBinder() {
-        this.ioServer.on("connection", (socket) => {
+        this.ioServer.on("connection", (socket: any) => {
             const session = socket.request.session;
             const user = session?.user;
             if (user) {
@@ -207,31 +271,30 @@ export class ChessServer {
 
             socket.on("disconnect", () => {
                 const session = socket.request.session;
-                if (session?.user) {
-                    const userId = session.user.id;
-                    this.matchmaking.removeFromQueue(userId);
+                if (!session?.user) return;
+                const userId = session.user.id;
+                this.matchmaking.removeFromQueue(userId);
 
-                    const playerGame = this.matchmaking.getPlayerGame(userId);
-                    if (!playerGame) return;
+                const playerGame = this.matchmaking.getPlayerGame(userId);
+                if (!playerGame) return;
 
-                    const { gameId } = playerGame; 
-                    if (userId === playerGame.match.white.userId) {
-                      playerGame.match.white.timeout = setTimeout(()=>{
-                        this.matchmaking.endGame(Number(gameId), 2, `Black won on abandonment`);
-                      }, 15000);
-                    } else if (userId === playerGame.match.black.userId) {
-                      playerGame.match.black.timeout = setTimeout(()=>{
-                       this.matchmaking.endGame(Number(gameId), 1, `White won on abandonment`);
-                      }, 15000);
-                    }
-
-                if (playerGame) socket.to(`game_${playerGame.gameId}`).emit("opponent_disconnected");
+                const { gameId, match } = playerGame; 
+                if (userId === playerGame.match.white.userId) {
+                  playerGame.match.white.timeout = setTimeout(()=>{
+                    this.matchmaking.endGame(Number(gameId), 2, `Black won on abandonment`);
+                  }, 20000);
+                } else if (userId === playerGame.match.black.userId) {
+                  playerGame.match.black.timeout = setTimeout(()=>{
+                    this.matchmaking.endGame(Number(gameId), 1, `White won on abandonment`);
+                  }, 20000);
                 }
+
+              if (playerGame) socket.to(`game_${playerGame.gameId}`).emit("opponent_disconnected", {msg: "Opponent disconnected"});
             });
             // END_CONNECTION
 
             // Handle queue and game data
-            socket.on("join-queue", (data) => {
+            socket.on("join-queue", (data: { timeControl: any; }) => {
                 const timeControl = data.timeControl;
 
                 const session = socket.request.session;
@@ -245,7 +308,7 @@ export class ChessServer {
                 socket.emit('waitingForMatch');
             });
 
-            socket.on('join_game', async (gameId) => {
+            socket.on('join_game', async (gameId: any) => {
                 const session = socket.request.session;
 
                 // Check if user is part of this game; make sure valid player
@@ -308,7 +371,7 @@ export class ChessServer {
                 }
             });
 
-            socket.on("move", async (data) => {
+            socket.on("move", async (data: { gameId: any; notation: any; color: string; displayMove: any; fen: any; }) => {
                 const session = socket.request.session;
                 if (!session.user) return;
                   
@@ -346,7 +409,7 @@ export class ChessServer {
                 }
             });
 
-            socket.on("game_over", async (data) => {
+            socket.on("game_over", async (data: { gameId: any; result: any; quote: any; }) => {
                 const session = socket.request.session;
 
                 if (!session.user) return;
@@ -363,28 +426,28 @@ export class ChessServer {
                 }
             });
 
-            socket.on("draw_request", (data) => {
+            socket.on("draw_request", (data: { gameId: any; }) => {
               socket.to(`game_${data.gameId}`).emit("draw_offered"); 
             })
 
-            socket.on("draw_rejected", (data) => {
+            socket.on("draw_rejected", (data: { gameId: any; }) => {
               socket.to(`game_${data.gameId}`).emit("draw_response");
             })
         });
     }
 
-    async searchUser(username) {
+    async searchUser(username: any) {
         const [rows, fields] = await this.dataBase.query("SELECT * FROM users WHERE username = ?", [username]);
         return rows;
     }
 
-    async createUser(username, password, email) {
+    async createUser(username: any, password: string | Buffer<ArrayBufferLike>, email: any) {
         const hashedPassword = await bcrypt.hash(password, this.saltRounds);
         const result = await this.dataBase.query("INSERT INTO users (username, email, password) VALUES (?, ?, ?);", [username, email, hashedPassword]);
         return result[0];
     }
 
-    async getHash(username) {
+    async getHash(username: any) {
         const result = await this.dataBase.query("SELECT password FROM users WHERE username = ?", [username]);
         return result[0][0].password;
     }
@@ -392,7 +455,7 @@ export class ChessServer {
 
 
 
-const timeControlIndex = {
+const timeControlIndex: { [key: string] : number} = {
     "1+0" :     0,
     "3+0" :     1,
     "3+2" :     2,
@@ -405,7 +468,7 @@ const timeControlIndex = {
 
 };
 
-const timeControlMap = {
+const timeControlMap: { [key: string] : {start: number, inc: number}} = {
     "1+0" :     {start: 60.0,     inc: 0},
     "3+0" :     {start: 180.0,    inc: 0},
     "3+2" :     {start: 180.0,    inc: 2},
@@ -418,21 +481,23 @@ const timeControlMap = {
 
 };
 
-const outComes = {
-  0 : "ongoing" ,
-  1 : "white-win",
-  2 : "black-win",
-}
 
 class MatchMaking {
-  constructor(io, db) {
-    this.io = io;
+  io: any;
+  queue: PlayerInQueue[][];
+  activeMatches: Map<any, any>;
+  dataBase: any;
+  constructor() {
     this.queue = [[], [], [], [], [], [], [] ,[], []];
     this.activeMatches = new Map();
+  }
+
+  init(io: any, db: any) {
+    this.io = io;
     this.dataBase = db;
   }
 
-  startClock(gameId, startTime) {
+  startClock(gameId: any, startTime: any) {
     const match = this.activeMatches.get(gameId);
     if (!match) return;
 
@@ -471,21 +536,21 @@ class MatchMaking {
 
   }
 
-  stopClock(gameId) {
+  stopClock(gameId: number) {
     const match = this.activeMatches.get(gameId);
     if (match?.clock?.timer) {
       clearInterval(match.clock.timer);
     }
   }
 
-  switchClock(gameId) {
+  switchClock(gameId: number) {
     const match = this.activeMatches.get(Number(gameId));
     if (!match || !match.clock) return;
 
     match.clock.activeColor = match.clock.activeColor === 'white' ? 'black' : 'white';
   }
 
-  addToQueue(socket, userId, timeControl) {
+  addToQueue(socket: any, userId: any, timeControl: string | number) {
     this.removeFromQueue(userId);
 
     this.queue[timeControlIndex[timeControl]].push({
@@ -496,17 +561,18 @@ class MatchMaking {
     return this.tryMatch(timeControl);
   }
 
-  removeFromQueue(userId) {
-    for (let i=0; i<9; i++) this.queue[i] = this.queue[i].filter(player => player.userId !== userId);
+  removeFromQueue(userId: any) {
+    for (let i=0; i<9; i++) this.queue[i] = this.queue[i].filter((player: { userId: any; }) => player.userId !== userId);
   }
 
-  async tryMatch(timeControl) {
+  async tryMatch(timeControl: string | number) {
     console.log("Trying")
     if (this.queue[timeControlIndex[timeControl]].length >= 2) {
       const player1 = this.queue[timeControlIndex[timeControl]].shift();
       const player2 = this.queue[timeControlIndex[timeControl]].shift();
+      if (!player1 || !player2) return;
       try {
-        
+
         const initialFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; // Initial FEN for the game
         const initialFenHistory = JSON.stringify([initialFEN]);
         const moves = JSON.stringify([])
@@ -525,7 +591,7 @@ class MatchMaking {
             moves,
             clockStartingTime,
             clockStartingTime,
-            outComes[0],
+            "ongoing",
 
           ]
         );
@@ -565,15 +631,15 @@ class MatchMaking {
       } catch (error) {
         console.error('Error creating game:', error);
         // Put players back in queue if database insertion fails
-        this.queue.unshift(player2);
-        this.queue.unshift(player1);
+        this.queue[timeControlIndex[timeControl]].unshift(player2);
+        this.queue[timeControlIndex[timeControl]].unshift(player1);
         return null;
       }
     }
     return null;
   }
 
-  getPlayerGame(userId) {
+  getPlayerGame(userId: any) {
     for (const [gameId, match] of this.activeMatches) {
       if (match.white.userId === userId || match.black.userId === userId) {
         return { gameId, match };
@@ -582,9 +648,18 @@ class MatchMaking {
     return null;
   }
 
-  async endGame(gameId, result, quote) {
+  async endGame(gameId: number, result: number, quote: string) {
+
+    
 
     const match = this.activeMatches.get(gameId);
+    if (match.white.timeout) {
+      clearTimeout(match.white.timeout);
+    }
+    if (match.black.timeout) {
+      clearTimeout(match.black.timeout);
+    }
+
     const whiteTime = match.clock.whiteTime;
     const blackTime = match.clock.blackTime;
 

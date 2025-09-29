@@ -1,4 +1,4 @@
-import NavBar from "@components/home-components/Nav"
+import NavBar from "./Nav"
 // @ts-ignore
 import socket from "@components/Socket";
 

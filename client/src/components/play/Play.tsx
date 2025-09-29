@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import NavBar from "@components/home-components/Nav";
+import NavBar from "../home-components/Nav";
 import socket from "@components/Socket";
-import GameBox from "@components/play/GameBox";
+import GameBox from "./GameBox";
 
 const timeControls = [
     "1+0", "3+0", "3+2",

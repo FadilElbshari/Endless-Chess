@@ -1,0 +1,23 @@
+.profile-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    padding-top: 10vh;
+    padding-left: 5vh;
+    justify-content: space-between;
+}
+
+.image-container {
+}
+
+.games-log-container {
+    display: flex;
+    position: relative;
+    flex-direction: column;
+    margin-left: 10vh;
+    margin-right: 10vh;
+    margin-top: 10vh;
+    width: 50vh;
+    border-radius: 1vh;
+    background-color: red;
+}

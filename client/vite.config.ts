@@ -1,37 +1,33 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv, type ConfigEnv } from 'vite'
 import react from '@vitejs/plugin-react'
-import dotenv from 'dotenv';
 
-const env_file = "../.env";
-dotenv.config({path: env_file});
+export default ({ mode }: ConfigEnv) => {
+  // Load .env files based on the mode (e.g. development, production)
+  const env = loadEnv(mode, process.cwd(), '')
 
-
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    host: true,
-    port: Number(process.env.REACT_APP_PORTC),
-    proxy: {
-      '/api': {
-        target: `${process.env.REACT_APP_URL}:${process.env.REACT_APP_PORTS}`,
-        changeOrigin: true,
-        // rewrite: (path) => path.replace(/^\/api/, ''),
+  return defineConfig({
+    plugins: [react()],
+    server: {
+      host: true,
+      port: Number(env.VITE_PORT_CLIENT),
+      proxy: {
+        '/api': {
+          target: `${env.VITE_SERVER_URL}`,
+          changeOrigin: true,
+        },
       },
+      allowedHosts: [
+        "endlesschess.live",
+        "localhost",
+      ]
     },
-    allowedHosts: [
-      "onlinechess.xyz",
-      "localhost",
-      "172.20.10.10",
-    ]
-  },
-
     resolve: {
-    alias: {
-      '@styles': '/src/assets/styles',
-      '@components': '/src/assets/components',
-      '@images': '/src/assets/images',
-      '@engine': '/src/assets/engine',
+      alias: {
+        '@styles': '/src/styles',
+        '@components': '/src/components',
+        '@images': '/src/images',
+        '@engine': '/src/engine',
+      }
     }
-  }
-})
+  })
+}
