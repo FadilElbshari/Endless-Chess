@@ -4,25 +4,23 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import mysql from 'mysql2'
 import bcrypt from 'bcrypt'
-import * as crypto from 'crypto';
-import dotenv from 'dotenv';
 import validator from 'validator';
 import { fileURLToPath } from 'url';
+import dotenv from "dotenv";
 import { dirname, join } from 'path';
 import path from 'path';
 import type { Request, ParamsDictionary, NextFunction } from 'express-serve-static-core';
 import type { ParsedQs } from 'qs';
 
-const DEV: boolean = true;
-let env_file = "";
-if (DEV) {
-  env_file = "../client/.env.development";
-} else {
-  env_file = "../client/.env.production";
+// Load dev env only locally
+if (process.env.NODE_ENV !== "production") {
+  dotenv.config({ path: "../client/.env.development" });
 }
 
+const PORT = process.env.PORT;
+const SERVER_URL = process.env.REACT_APP_SERVER_URL;
 
-dotenv.config({path: env_file});
+console.log("Server running with", process.env.NODE_ENV || "dev", SERVER_URL);
 
 const errorMap: { [key: string]: string } = {
   "1062": "Used email or username",
@@ -62,9 +60,6 @@ export class ChessServer {
         this.__filename = fileURLToPath(import.meta.url);
         this.__dirname = dirname(this.__filename);
         this.parentDir = path.join(this.__dirname, '..');
-
-        console.log(this.parentDir);
-
 
         // Setting up ExpressJs server
         this.app = express();

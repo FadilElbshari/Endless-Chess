@@ -46,6 +46,9 @@ const Game: React.FC<GameProps> = ({}) => {
         socket.emit("join_game", gameId);
         console.log("joined")
 
+        console.log(moveCount);
+        console.log(isOpponentConnected);
+
         const handleGameState = (data: any) => {
             setFen(data.fen);
             setUsername1(data.player1.username);
@@ -169,9 +172,9 @@ const Game: React.FC<GameProps> = ({}) => {
     }
 
 
-    if (!game || !fen || !username1 || !username2 || flip===null) {
-        return <div>Loading....</div>;
-    }
+        if (!game || !fen || !username1 || !username2 || flip===null) {
+            return <div>Loading....</div>;
+        }
 
     const parseMoves= (moves: string[]): string[] => {
         let finalList: string[] = [];

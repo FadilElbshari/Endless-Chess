@@ -102,7 +102,7 @@ const Board: React.FC<BoardProps> = ({allow, type, size, fen, flip=false, color,
   const mouseDownRef = useRef(false);
 
   useEffect(() => {
-    socket.on("move_update", (data) => {
+    socket.on("move_update", (data: any) => {
       
         const notation = data.move;
         const [fromId, toId] = getSquaresData(notation);
