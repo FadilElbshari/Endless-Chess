@@ -23,11 +23,6 @@ if (process.env.NODE_ENV !== "production") {
   dotenv.config({ path: "../client/.env.development" });
 }
 
-const PORT = process.env.PORT;
-const SERVER_URL = process.env.REACT_APP_SERVER_URL;
-
-console.log("Server running with", process.env.NODE_ENV || "dev", SERVER_URL);
-
 const errorMap: { [key: string]: string } = {
   "1062": "Used email or username",
 };
@@ -59,8 +54,7 @@ export class ChessServer {
     async init() {
       
         // Server Constants
-        if (!process.env.REACT_APP_PORT_SERVER) return;
-        this.PORT = process.env.REACT_APP_PORT_SERVER;
+        this.PORT = process.env.PORT || process.env.REACT_APP_PORT_SERVER || "3001";
         this.saltRounds = 10;
 
         this.__filename = fileURLToPath(import.meta.url);
@@ -69,6 +63,7 @@ export class ChessServer {
 
         // Setting up ExpressJs server
         this.app = express();
+        this.app.set("trust proxy", 1);
         const server = createServer(this.app);
         this.ioServer = new Server(server, {
           cors: {
