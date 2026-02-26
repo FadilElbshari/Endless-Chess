@@ -80,28 +80,39 @@ export class ChessServer {
 
         this.ioServer.adapter(createAdapter(pubClient, subClient));
         
-        const secretCode = process.env.SESSION_SECRET || '';
+        // Create a separate Redis client for sessions (using standard 'redis' package)
+  const sessionRedisClient = createClient({
+    socket: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379')
+    },
+    password: process.env.REDIS_PASSWORD,
+  });
 
-        // Create Redis store
-        const redisStore = new RedisStore({
-          client: redis,
-          prefix: 'sess:',
-          ttl: 3600
-        });
+  sessionRedisClient.on('error', (err) => console.error('Session Redis Client Error', err));
+  await sessionRedisClient.connect();
 
-        // Session data
-        const sessionMiddleware = session({
-            store: redisStore,
-            secret: secretCode,
-            resave: false,
-            saveUninitialized: false,
-            cookie: {
-              maxAge: 3600000,
-              httpOnly: true,
-              secure: process.env.NODE_ENV === 'production',
-              sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-            }
-        });
+  const secretCode = process.env.SESSION_SECRET || '';
+
+  // Create Redis store with the standard redis client
+  const redisStore = new RedisStore({
+    client: sessionRedisClient,
+    prefix: 'sess:',
+  });
+
+  // Session data
+  const sessionMiddleware = session({
+      store: redisStore,
+      secret: secretCode,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        maxAge: 3600000,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      }
+  });
 
         
         // Linking session to express server and io server

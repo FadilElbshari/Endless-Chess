@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.mjs",
     "dev": "nodemon src/server.ts"
-},
+  },
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -24,7 +24,7 @@
     "ioredis": "^5.9.2",
     "mathjs": "^14.0.1",
     "mysql2": "^3.11.5",
-
+    "redis": "^5.10.0",
     "socket.io": "^4.8.1",
     "validator": "^13.15.15"
   },
